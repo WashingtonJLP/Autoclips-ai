@@ -218,3 +218,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AutoClips AI: Node, mídia e segredos
+node_modules/
+.next/
+.env.*
+!.env.example
+media/
+models/
+*.mp4
+*.mp3
+*.wav
+*.mkv
+*.srt
+*.tsbuildinfo
+artifacts/
