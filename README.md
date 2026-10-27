@@ -1,2 +1,53 @@
-# Autoclips-ai
-AI-powered platform for automated video discovery, transcription, clipping, editing, and publishing using Python and TypeScript.
+# AutoClips AI
+
+Plataforma MIT para produzir vídeos curtos com reutilização comercial verificada.
+Publicação permanece em **simulação**. CC BY/CC0 não garantem monetização:
+verifique origem, atribuição e direitos de terceiros.
+
+## Tecnologias e execução
+
+Next.js/TypeScript/Tailwind, NestJS, Prisma/PostgreSQL, Redis/BullMQ e
+Python 3.12/FastAPI/faster-whisper/FFmpeg. CPU/INT8, sem GPU.
+
+Requer Node 22 e Python 3.12. Na raiz:
+
+```powershell
+npm ci
+npm run db:generate
+npm run dev:api
+# Em outro terminal:
+npm run dev:web
+```
+
+Worker em outro terminal:
+
+```powershell
+cd apps/worker-python
+py -3.12 -m venv .venv
+.venv/Scripts/python.exe -m pip install uv==0.13.6
+.venv/Scripts/uv.exe sync --frozen
+.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Dashboard: http://localhost:3000; API: http://localhost:3001/health;
+worker: http://localhost:8000/health e documentação em `/docs`.
+
+## Validação
+
+```powershell
+npm run lint
+npm test
+npm run build
+cd apps/worker-python
+.venv/Scripts/python.exe -m pytest
+.venv/Scripts/ruff.exe check .
+```
+
+## Roadmap
+
+Base de serviços → infraestrutura Compose → fontes e evidências → fila interna
+→ transcrição → cortes verticais e legendas → revisão e publicação autorizada.
+Descoberta automática, seleção inteligente e publicação real são trabalhos futuros.
+
+Consulte [arquitetura](docs/architecture/README.md),
+[ambiente](docs/development/ambiente.md) e [decisões](docs/decisions/0001-base.md).
