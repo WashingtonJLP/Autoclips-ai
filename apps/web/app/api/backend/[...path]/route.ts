@@ -7,7 +7,7 @@ async function forward(
   const { path } = await context.params;
   const target = path.join('/');
   if (
-    !/^(sources|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/publish)$/.test(
+    !/^(sources|llm\/config|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage))$/.test(
       target,
     )
   ) {
@@ -33,7 +33,7 @@ async function forward(
     );
     return new Response(await response.text(), {
       status: response.status,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
   } catch {
     return Response.json(

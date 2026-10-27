@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import SelectionResults from './selection-results';
 
 type Source = { id: string; name: string; license: string };
 type Task = {
@@ -10,6 +11,17 @@ type Task = {
   error: string | null;
   result: Record<string, unknown> | null;
   createdAt: string;
+  editorial?: { title: string; description: string } | null;
+};
+type LlmSettings = {
+  provider: string;
+  model: string;
+  simulated: boolean;
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  dailyTokenBudget: number;
+  dailyCostMicros: number;
+  budget: { committedTokens: string; committedCostMicros: string; day: string };
 };
 const field =
   'mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100';
@@ -39,14 +51,17 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState('transcribe');
+  const [llm, setLlm] = useState<LlmSettings | null>(null);
   const refresh = useCallback(async () => {
     try {
-      const [nextSources, nextTasks] = await Promise.all([
+      const [nextSources, nextTasks, settings] = await Promise.all([
         api('sources'),
         api('jobs'),
+        api('llm/config'),
       ]);
       setSources(nextSources);
       setTasks(nextTasks);
+      setLlm(settings);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao atualizar');
@@ -57,6 +72,20 @@ export default function Dashboard() {
     const timer = setInterval(() => void refresh(), 5000);
     return () => clearInterval(timer);
   }, [refresh]);
+  async function taskAction(path: string, body: unknown, message: string) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const task = await api(path, body);
+      setMessage(`${message} Tarefa: ${task.id}`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha na tarefa');
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit(
     event: React.FormEvent<HTMLFormElement>,
     kind: 'sources' | 'jobs',
@@ -103,6 +132,29 @@ export default function Dashboard() {
         Coloque a mídia autorizada na pasta media. Cadastre a fonte e envie o
         caminho relativo para processar.
       </p>
+      {llm && (
+        <aside className="mt-5 rounded-xl border border-slate-800 p-4 text-sm text-slate-400">
+          <p>
+            Seleção:{' '}
+            <strong className="text-emerald-300">
+              {llm.simulated ? 'Simulada, sem API externa' : llm.provider}
+            </strong>{' '}
+            · modelo {llm.model}
+          </p>
+          <p className="mt-2">
+            Limite por chamada: {llm.maxInputTokens} tokens de entrada /{' '}
+            {llm.maxOutputTokens} de saída. Orçamento UTC {llm.budget.day}:{' '}
+            {llm.budget.committedTokens}/{llm.dailyTokenBudget} tokens
+            comprometidos;{' '}
+            {(Number(llm.budget.committedCostMicros) / 1000000).toFixed(6)}/
+            {(llm.dailyCostMicros / 1000000).toFixed(6)} USD.
+          </p>
+          <p className="mt-2 text-xs">
+            Reservas incluem consumo ainda desconhecido. Pontuações e textos
+            precisam de revisão antes de renderizar.
+          </p>
+        </aside>
+      )}
       {error && (
         <p role="alert" className="mt-5 rounded-lg bg-red-950 p-4 text-red-200">
           {error}
@@ -277,7 +329,11 @@ export default function Dashboard() {
             >
               <div className="flex flex-wrap justify-between gap-3">
                 <strong>
-                  {task.operation === 'clip' ? 'Corte vertical' : 'Transcrição'}
+                  {task.operation === 'select'
+                    ? 'Seleção de trechos'
+                    : task.operation === 'clip'
+                      ? 'Corte vertical'
+                      : 'Transcrição'}
                 </strong>
                 <span className="text-sm text-emerald-300">
                   {(
@@ -295,6 +351,46 @@ export default function Dashboard() {
               {task.error && (
                 <p className="mt-3 text-sm text-red-300">{task.error}</p>
               )}
+              {task.editorial && (
+                <div className="mt-4">
+                  <h4 className="font-semibold">{task.editorial.title}</h4>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {task.editorial.description}
+                  </p>
+                </div>
+              )}
+              {task.operation === 'select' &&
+                task.status === 'COMPLETED' &&
+                task.result && (
+                  <SelectionResults
+                    result={task.result}
+                    busy={busy}
+                    onRender={(candidateId) =>
+                      void taskAction(
+                        `jobs/${task.id}/render-selection`,
+                        { candidateId },
+                        'Renderização solicitada. Repetições reutilizam o mesmo corte.',
+                      )
+                    }
+                  />
+                )}
+              {task.operation === 'transcribe' &&
+                task.status === 'COMPLETED' && (
+                  <button
+                    type="button"
+                    disabled={busy || !llm}
+                    onClick={() =>
+                      void taskAction(
+                        `jobs/${task.id}/select`,
+                        {},
+                        'Seleção enfileirada.',
+                      )
+                    }
+                    className="mt-5 mr-5 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"
+                  >
+                    Selecionar trechos {llm?.simulated ? '(simulado)' : ''}
+                  </button>
+                )}
               {task.result && (
                 <details className="mt-3 text-sm">
                   <summary className="cursor-pointer text-emerald-400">
@@ -305,7 +401,7 @@ export default function Dashboard() {
                   </pre>
                 </details>
               )}
-              {task.status === 'COMPLETED' && (
+              {task.status === 'COMPLETED' && task.operation === 'clip' && (
                 <button
                   type="button"
                   className="mt-4 text-sm text-amber-300"

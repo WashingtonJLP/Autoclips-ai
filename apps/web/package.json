@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start --hostname 0.0.0.0"
+    "start": "next start --hostname 0.0.0.0",
+    "test": "tsx --test test/*.test.tsx"
   },
   "dependencies": {
     "next": "16.4.3",
@@ -13,9 +14,10 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.16",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "tailwindcss": "^4.1.16",
-    "@tailwindcss/postcss": "^4.1.16"
+    "tsx": "^4.23.15"
   }
 }

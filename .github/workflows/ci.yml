@@ -42,6 +42,8 @@ jobs:
       - run: uv sync --frozen
       - run: uv run --frozen ruff check .
       - run: uv run --frozen ruff format --check .
+      - run: uv run --frozen ruff check --config pyproject.toml ../../scripts/create-selection-fixture.py
+      - run: uv run --frozen ruff format --check --config pyproject.toml ../../scripts/create-selection-fixture.py
       - run: uv run --frozen pytest
   compose:
     runs-on: ubuntu-latest
@@ -54,6 +56,12 @@ jobs:
       - run: docker compose config --quiet
       - run: docker compose up -d --build --wait --wait-timeout 180
       - run: node scripts/smoke.mjs
+      - name: Seleção simulada, orçamento e renderização
+        env:
+          SELECTION_FIXTURE_PATH: fixtures/selection-smoke.mp4
+        run: |
+          docker compose exec -T -e SELECTION_FIXTURE_PATH="$SELECTION_FIXTURE_PATH" worker python - < scripts/create-selection-fixture.py
+          docker compose exec -T -e SELECTION_FIXTURE_PATH="$SELECTION_FIXTURE_PATH" api node scripts/selection-integration.cjs
       - run: curl --fail http://127.0.0.1:3000/api/health
       - if: always()
         run: docker compose logs --tail 100

@@ -21,7 +21,7 @@ Não versione saídas, logs, caches, modelos ou credenciais. Antes do commit:
 `git diff --cached --check`, `git diff --cached --stat` e revisão dos arquivos
 em `git diff --cached --name-only`. `.env.example` contém somente placeholders.
 
-## Resultados da implementação
+## Resultados da implementação inicial
 
 - Node: quatro testes aprovados (direitos, caminhos/intervalos, health e erros do worker).
 - Python no Windows: sete aprovados; um ignorado por privilégio de symlink.
@@ -39,3 +39,24 @@ em `git diff --cached --name-only`. `.env.example` contém somente placeholders.
 
 O workflow remoto só deve ser declarado aprovado após consultar seu resultado no
 GitHub; validar localmente não equivale a observar uma execução remota.
+
+## Seleção LLM
+
+O conjunto Node passou a ter 15 testes: 13 da API e dois da apresentação do dashboard.
+Os testes adicionais cobrem candidatos
+válidos, notas/JSON/IDs/tempos inválidos, filtros de duplicação, segmentação por
+limite, estouro de orçamento antes do envio, falha de API, métricas ausentes ou
+inválidas e consumo informado acima da reserva. O protocolo Ollama é testado com
+transporte simulado, sem modelo real nem API paga.
+
+O teste `scripts/selection-integration.cjs`, executado no container API, valida
+PostgreSQL real: reservas concorrentes, teto diário, liquidação de consumo,
+reservas desconhecidas, cache e bloqueio por custo. Também exercita API/fila,
+seleção mock e renderização idempotente com FFmpeg real a partir de uma transcrição
+stub declarada. O CI executa esse fluxo no job Compose. Os testes não comprovam
+qualidade editorial de um LLM real.
+
+Os testes da interface renderizam os cartões React e verificam critérios, tempos,
+conteúdo escapado e distinção entre custo zero informado e custo desconhecido.
+A página/proxy foram validados por HTTP; inspeção visual e cliques em navegador
+continuam pendentes pela indisponibilidade do navegador de automação.

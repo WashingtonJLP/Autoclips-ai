@@ -80,6 +80,10 @@ Consulte [arquitetura](docs/architecture/README.md),
 
 Documentação: [API](docs/development/api.md), [mídia](docs/development/midia.md),
 [qualidade](docs/development/qualidade.md) e [progresso](docs/development/progresso.md).
-Descoberta, download autorizado, seleção inteligente, geração de títulos e
-publicação real ainda não foram implementados. As evidências são revisadas pelo
+Seleção por provedores desacoplados, sugestões de títulos/descrições, controle de
+tokens/custos e renderização a partir dos trechos estão implementados com mock
+padrão. O adaptador opcional usa Ollama local; inferência real e qualidade semântica
+ainda exigem validação. Veja [seleção e configuração](docs/development/selecao.md).
+Descoberta, download autorizado e publicação real ainda não foram implementados.
+As evidências são revisadas pelo
 operador; não há verificação jurídica automática nem autenticação multiusuário.

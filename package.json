@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run test -w @autoclips/api",
+    "test": "npm run test -w @autoclips/api && npm run test -w @autoclips/web",
     "db:generate": "npm run generate -w @autoclips/database",
     "db:migrate": "npm run migrate -w @autoclips/database"
   },

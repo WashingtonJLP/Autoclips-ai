@@ -21,8 +21,26 @@ Este registro será atualizado com os resultados efetivamente observados.
 
 ## Limites atuais
 
-Ainda pendentes: descoberta por conectores, obtenção autorizada de mídia, seleção
-inteligente de trechos, títulos/descrições automáticos, métricas de desempenho
+Ainda pendentes: descoberta por conectores, obtenção autorizada de mídia, validação
+editorial com LLM real, métricas de desempenho
 editorial, autenticação, download de artefatos pelo dashboard e publicação real.
 Verificação jurídica é revisão do operador com evidência, não uma decisão da IA.
 O servidor TrueNAS/i5-2310 não foi acessado; benchmark e deploy estão pendentes.
+
+## Seleção de trechos por LLM
+
+Núcleo implementado em `ff48d2b`: interface de provedores, mock determinístico,
+adaptador opcional Ollama local, orçamento por seleção, blocos com limite de
+entrada/saída, notas por gancho/contexto/valor/clareza, tempos derivados de IDs,
+classificação, deduplicação e sugestões de título/descrição.
+
+Integração implementada em `ada5692` com `LlmBudget`/`LlmCall`, reserva serializável por dia
+UTC, consumo/custo quando informado, preservação de reservas desconhecidas e
+cache por tarefa/bloco. A API enfileira seleção a partir de transcrição concluída
+e renderiza trechos no pipeline existente, com metadados editoriais e chave única
+contra repetição. O dashboard mostra sugestões e permite selecionar/renderizar.
+
+Testes da integração usam um vídeo sintético e uma transcrição stub declarada;
+o corte e as legendas são produzidos por FFmpeg real. Nenhum LLM real foi
+executado. A qualidade semântica dos trechos não foi validada por inferência real.
+O padrão continua mock e a publicação continua simulada.

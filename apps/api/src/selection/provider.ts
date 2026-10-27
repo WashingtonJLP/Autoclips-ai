@@ -155,6 +155,7 @@ export class OllamaProvider implements LlmProvider {
             num_predict: request.maxOutputTokens,
             num_ctx: estimateInput(request) + request.maxOutputTokens,
             num_thread: 2,
+            num_gpu: 0,
           },
           keep_alive: 0,
         }),
