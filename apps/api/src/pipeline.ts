@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Inject,
@@ -16,6 +17,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Queue, Worker, UnrecoverableError } from 'bullmq';
 import { jobSchema, parse, sourceSchema } from './contracts';
+import { SelectionPipeline } from './selection/pipeline';
 
 @Injectable()
 export class Pipeline implements OnModuleInit, OnModuleDestroy {
@@ -40,6 +42,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     },
   });
   readonly logger = new Logger(Pipeline.name);
+  readonly selection = new SelectionPipeline(this.db, this.queue);
   worker?: Worker;
   async onModuleInit() {
     await this.db.$connect();
@@ -67,11 +70,14 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
               commercial_use_verified: record.source.commercialUseVerified,
             },
           };
-          const result = await this.callWorker(
-            `/${record.operation}`,
-            request,
-            30 * 60 * 1000,
-          );
+          const result =
+            record.operation === 'select'
+              ? await this.selection.execute(record)
+              : await this.callWorker(
+                  `/${record.operation}`,
+                  request,
+                  30 * 60 * 1000,
+                );
           await this.db.task.update({
             where: { id: record.id },
             data: {
@@ -82,6 +88,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           return result;
         } catch (error) {
           const retrying =
+            record.operation !== 'select' &&
             !(error instanceof UnrecoverableError) &&
             job.attemptsMade + 1 < (job.opts.attempts ?? 1);
           await this.db.task.update({
@@ -91,6 +98,10 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
               error: error instanceof Error ? error.message : 'Falha no worker',
             },
           });
+          if (record.operation === 'select')
+            throw new UnrecoverableError(
+              error instanceof Error ? error.message : 'Falha de seleção',
+            );
           throw error;
         }
       },
@@ -102,7 +113,14 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     for (const task of await this.db.task.findMany({
       where: { status: 'QUEUED' },
     })) {
-      await this.queue.add(task.operation, {}, { jobId: task.id });
+      await this.queue.add(
+        task.operation,
+        {},
+        {
+          jobId: task.id,
+          ...(task.operation === 'select' ? { attempts: 1 } : {}),
+        },
+      );
     }
   }
   async callWorker(path: string, body?: unknown, timeout = 5000) {
@@ -140,6 +158,49 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
 @Controller()
 export class PipelineController {
   constructor(@Inject(Pipeline) private readonly pipeline: Pipeline) {}
+  @Get('llm/config')
+  llmConfiguration() {
+    return this.pipeline.selection.configuration();
+  }
+  @Post('jobs/:id/select')
+  select(@Param('id') id: string, @Body() body: unknown) {
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      Object.keys(body).length
+    )
+      throw new BadRequestException(
+        'Envie um objeto vazio; configuração LLM pertence ao servidor',
+      );
+    return this.pipeline.selection.enqueue(id);
+  }
+  @Post('jobs/:id/render-selection')
+  renderSelection(@Param('id') id: string, @Body() body: unknown) {
+    return this.pipeline.selection.render(id, body);
+  }
+  @Get('jobs/:id/llm-usage')
+  async llmUsage(@Param('id') id: string) {
+    await this.status(id);
+    return this.pipeline.db.llmCall.findMany({
+      where: { taskId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        key: true,
+        provider: true,
+        model: true,
+        state: true,
+        day: true,
+        inputReserved: true,
+        outputReserved: true,
+        costReservedMicros: true,
+        inputTokens: true,
+        outputTokens: true,
+        costMicros: true,
+        createdAt: true,
+      },
+    });
+  }
   @Get('ready')
   async ready() {
     try {

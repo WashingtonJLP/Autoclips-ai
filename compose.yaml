@@ -66,6 +66,21 @@ services:
       DATABASE_URL: postgresql://autoclips:${POSTGRES_PASSWORD:-local_example}@postgres:5432/autoclips
       REDIS_HOST: redis
       REDIS_PORT: '6379'
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_MODEL: ${LLM_MODEL:-mock-v1}
+      LLM_ALLOW_EXTERNAL: ${LLM_ALLOW_EXTERNAL:-false}
+      LLM_OLLAMA_URL: ${LLM_OLLAMA_URL:-http://host.docker.internal:11434}
+      LLM_MAX_INPUT_TOKENS: ${LLM_MAX_INPUT_TOKENS:-6000}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-1600}
+      LLM_RUN_TOKEN_BUDGET: ${LLM_RUN_TOKEN_BUDGET:-30000}
+      LLM_DAILY_TOKEN_BUDGET: ${LLM_DAILY_TOKEN_BUDGET:-100000}
+      LLM_RUN_COST_MICROS: ${LLM_RUN_COST_MICROS:-0}
+      LLM_DAILY_COST_MICROS: ${LLM_DAILY_COST_MICROS:-0}
+      LLM_MAX_CHUNKS: ${LLM_MAX_CHUNKS:-8}
+      LLM_MAX_CLIPS: ${LLM_MAX_CLIPS:-5}
+      LLM_MIN_DURATION: ${LLM_MIN_DURATION:-5}
+      LLM_MAX_DURATION: ${LLM_MAX_DURATION:-60}
+      LLM_MIN_SCORE: ${LLM_MIN_SCORE:-4.5}
     ports: ['127.0.0.1:3003:3001']
     depends_on:
       postgres: { condition: service_healthy }

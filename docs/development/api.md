@@ -12,6 +12,8 @@ autenticação e controle multiusuário ainda são pendentes.
 - `POST /jobs`: `sourceId`, `path` relativo à mídia, `operation` (`transcribe`
   ou `clip`); cortes exigem `start` e `end` em segundos, até 180 segundos.
 - `GET /jobs` e `GET /jobs/:id`: status e resultado persistidos.
+- `GET /llm/config`, `POST /jobs/:id/select`, `POST /jobs/:id/render-selection`
+  e `GET /jobs/:id/llm-usage`: seleção e consumo; veja [contratos](selecao.md).
 - `POST /jobs/:id/publish`: retorna `published: false`, sempre simulação.
 
 A declaração de direitos é uma evidência informada pelo operador, não uma

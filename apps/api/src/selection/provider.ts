@@ -187,5 +187,7 @@ export function createProvider(
     );
   if (config.model === 'mock-v1')
     throw new SelectionError('Configure um modelo local explícito');
+  if (/cloud|https?:/i.test(config.model))
+    throw new SelectionError('Modelos cloud não são permitidos');
   return new OllamaProvider(env.LLM_OLLAMA_URL ?? 'http://127.0.0.1:11434');
 }

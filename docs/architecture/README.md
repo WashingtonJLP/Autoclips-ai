@@ -21,3 +21,18 @@ Redis guarda a fila em AOF. Migrações são aplicadas antes de iniciar a API.
 O dashboard mostra as últimas 100 fontes e tarefas e atualiza a cada 5 segundos.
 Publicar retorna somente simulação. Não há integração externa de publicação.
 Os caminhos de saída são exibidos; download de artefatos pela interface é futuro.
+
+## Seleção de trechos
+
+Uma tarefa `select` referencia a transcrição concluída e usa `LlmProvider`, sem
+alterar o worker de mídia. O padrão mock não faz inferência. O adaptador opcional
+Ollama usa chat local e resposta estruturada. A seleção compacta texto por blocos,
+deriva tempos de IDs reais, pontua, classifica e remove candidatos semelhantes.
+O operador escolhe um trecho para gerar uma tarefa `clip`, reutilizando FastAPI e
+FFmpeg. Títulos e descrições ficam em `Task.editorial` no corte.
+
+`LlmBudget` e `LlmCall` registram reservas atômicas e consumo informado. Respostas
+persistidas evitam repetir uma chamada da mesma tarefa/bloco. Falhas não provocam
+novas chamadas LLM automáticas. Renderizações de um mesmo intervalo têm chave
+única; transações serializáveis também impedem cortes sobrepostos em concorrência.
+Veja [seleção](../development/selecao.md) e [ADR 0002](../decisions/0002-selecao-llm.md).

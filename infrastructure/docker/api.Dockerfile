@@ -7,6 +7,7 @@ COPY packages/database/package.json packages/database/package.json
 RUN npm ci
 COPY packages/database packages/database
 COPY apps/api apps/api
+COPY scripts/selection-integration.cjs scripts/selection-integration.cjs
 RUN npm run db:generate && npm run build -w @autoclips/api
 USER node
 EXPOSE 3001
