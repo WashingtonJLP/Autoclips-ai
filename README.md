@@ -29,8 +29,20 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Dashboard: http://localhost:3000; API: http://localhost:3001/health;
+Dashboard: http://localhost:3000; API: http://localhost:3003/health;
 worker: http://localhost:8000/health e documentação em `/docs`.
+
+## Docker
+
+```powershell
+docker compose config --quiet
+docker compose up -d --build --wait
+docker compose ps
+```
+
+No Compose, banco, Redis e worker são internos. Web e API ficam em loopback.
+A porta local 3003 evita conflito com outro projeto existente na máquina.
+Consulte [implantação](docs/deployment/README.md) para volumes e TrueNAS.
 
 ## Validação
 

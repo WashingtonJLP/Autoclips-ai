@@ -2,7 +2,7 @@ export default async function Home() {
   let connected = false;
   try {
     const response = await fetch(
-      `${process.env.API_URL ?? 'http://127.0.0.1:3001'}/health`,
+      `${process.env.API_URL ?? 'http://127.0.0.1:3003'}/health`,
       { cache: 'no-store', signal: AbortSignal.timeout(2500) },
     );
     connected = response.ok;

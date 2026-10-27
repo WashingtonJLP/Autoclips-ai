@@ -1,0 +1,111 @@
+name: autoclips-ai
+services:
+  postgres:
+    image: postgres:17.10-alpine
+    environment:
+      POSTGRES_USER: autoclips
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_example}
+      POSTGRES_DB: autoclips
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U autoclips -d autoclips']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 1g
+  redis:
+    image: redis:7.4-alpine
+    command:
+      [
+        redis-server,
+        --appendonly,
+        'yes',
+        --maxmemory,
+        256mb,
+        --maxmemory-policy,
+        noeviction,
+      ]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 384m
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    environment:
+      MEDIA_ROOT: /media
+      WHISPER_MODEL: tiny
+      WHISPER_CPU_THREADS: '2'
+      HF_HOME: /models
+    volumes: [./media:/media, models:/models]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 4g
+    cpus: 2
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3001'
+      WORKER_URL: http://worker:8000
+      DATABASE_URL: postgresql://autoclips:${POSTGRES_PASSWORD:-local_example}@postgres:5432/autoclips
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+    ports: ['127.0.0.1:3003:3001']
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      worker: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 768m
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    environment:
+      API_URL: http://api:3001
+      HOSTNAME: 0.0.0.0
+    ports: ['127.0.0.1:3000:3000']
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 768m
+volumes:
+  postgres_data:
+  redis_data:
+  models:
