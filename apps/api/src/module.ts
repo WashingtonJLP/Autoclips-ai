@@ -1,4 +1,5 @@
 import { Controller, Get, Module } from '@nestjs/common';
+import { Pipeline, PipelineController } from './pipeline';
 
 @Controller()
 export class AppController {
@@ -8,5 +9,8 @@ export class AppController {
   }
 }
 
-@Module({ controllers: [AppController] })
+@Module({
+  controllers: [AppController, PipelineController],
+  providers: [Pipeline],
+})
 export class AppModule {}

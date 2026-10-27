@@ -12,5 +12,20 @@ model Source {
   evidenceUrl String
   attribution String
   verifiedAt DateTime
+  commercialUseVerified Boolean @default(false)
   createdAt DateTime @default(now())
+  tasks Task[]
+}
+model Task {
+  id String @id @default(cuid())
+  sourceId String
+  source Source @relation(fields: [sourceId], references: [id])
+  operation String
+  status String @default("QUEUED")
+  payload Json
+  result Json?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
 }

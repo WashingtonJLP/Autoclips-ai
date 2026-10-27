@@ -10,4 +10,4 @@ COPY apps/api apps/api
 RUN npm run db:generate && npm run build -w @autoclips/api
 USER node
 EXPOSE 3001
-CMD ["node", "apps/api/dist/main.js"]
+CMD ["sh", "-c", "npm run db:migrate && node apps/api/dist/main.js"]
