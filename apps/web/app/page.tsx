@@ -1,3 +1,5 @@
+import Dashboard from './dashboard';
+
 export default async function Home() {
   let connected = false;
   try {
@@ -63,6 +65,7 @@ export default async function Home() {
           ))}
         </ol>
       </section>
+      <Dashboard />
       <p className="mt-8 text-sm text-slate-500">
         CC BY e CC0 exigem verificação de origem. A licença não garante
         monetização nas plataformas.

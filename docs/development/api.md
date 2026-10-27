@@ -19,7 +19,8 @@ verificação jurídica automática. Não aceite arquivos sem revisar origem, li
 permissões comerciais e eventuais direitos de imagem, música e terceiros.
 
 BullMQ usa concorrência global 1, três tentativas e backoff exponencial para
-falhas transitórias. Rejeições permanentes do worker não são repetidas. Tarefas
+falhas transitórias, com status RETRYING até esgotar tentativas. Rejeições
+permanentes do worker não são repetidas. Tarefas
 QUEUED persistidas são reenfileiradas no início. Redis usa AOF e volume: a fila
 nunca deve ser tratada como backup. Recuperação após perda total de Redis de
 tarefas PROCESSING requer revisão manual para evitar processamento duplicado.

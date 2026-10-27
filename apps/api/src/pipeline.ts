@@ -81,10 +81,13 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           });
           return result;
         } catch (error) {
+          const retrying =
+            !(error instanceof UnrecoverableError) &&
+            job.attemptsMade + 1 < (job.opts.attempts ?? 1);
           await this.db.task.update({
             where: { id: record.id },
             data: {
-              status: 'FAILED',
+              status: retrying ? 'RETRYING' : 'FAILED',
               error: error instanceof Error ? error.message : 'Falha no worker',
             },
           });

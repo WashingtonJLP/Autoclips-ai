@@ -11,6 +11,11 @@ Python 3.12/FastAPI/faster-whisper/FFmpeg. CPU/INT8, sem GPU.
 
 Requer Node 22 e Python 3.12. Na raiz:
 
+O caminho recomendado para o conjunto completo é o Docker Compose descrito abaixo.
+Para desenvolver a API fora do Docker, forneça `DATABASE_URL`, `REDIS_HOST` e
+`WORKER_URL` de serviços acessíveis e aplique `npm run db:migrate`. As portas
+de banco/Redis/worker do Compose não são publicadas por padrão.
+
 ```powershell
 npm ci
 npm run db:generate
@@ -63,3 +68,18 @@ Descoberta automática, seleção inteligente e publicação real são trabalhos
 
 Consulte [arquitetura](docs/architecture/README.md),
 [ambiente](docs/development/ambiente.md) e [decisões](docs/decisions/0001-base.md).
+
+## Funcionalidades implementadas
+
+- Dashboard com fontes, evidências, fila, resultados e publicação simulada.
+- API com validação de direitos, migrações, persistência e readiness.
+- BullMQ com execução sequencial, tentativas e histórico persistido.
+- Transcrição tiny/CPU/INT8, segmentos, palavras e JSON.
+- Cortes H.264/AAC 9:16, SRT sincronizado e legendas inseridas no vídeo.
+- Testes com mídia sintética local e pipeline GitHub Actions.
+
+Documentação: [API](docs/development/api.md), [mídia](docs/development/midia.md),
+[qualidade](docs/development/qualidade.md) e [progresso](docs/development/progresso.md).
+Descoberta, download autorizado, seleção inteligente, geração de títulos e
+publicação real ainda não foram implementados. As evidências são revisadas pelo
+operador; não há verificação jurídica automática nem autenticação multiusuário.
