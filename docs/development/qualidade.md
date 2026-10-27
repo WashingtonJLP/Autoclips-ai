@@ -56,6 +56,11 @@ seleção mock e renderização idempotente com FFmpeg real a partir de uma tran
 stub declarada. O CI executa esse fluxo no job Compose. Os testes não comprovam
 qualidade editorial de um LLM real.
 
+O job Compose usa `compose.test.yaml` para substituir somente a montagem `/media`
+por um volume nomeado exclusivo dos testes. O volume herda o UID 10001 da imagem,
+permitindo executar FFmpeg sem root no runner Linux. O Compose principal mantém
+a pasta local do operador; nenhuma permissão dessa pasta é alterada pelo teste.
+
 Os testes da interface renderizam os cartões React e verificam critérios, tempos,
 conteúdo escapado e distinção entre custo zero informado e custo desconhecido.
 A página/proxy foram validados por HTTP; inspeção visual e cliques em navegador

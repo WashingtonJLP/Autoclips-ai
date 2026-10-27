@@ -1,0 +1,8 @@
+# Exclusivo dos testes: volume vazio recebe as permissões UID 10001 da imagem.
+# O Compose principal continua montando a mídia local do operador.
+services:
+  worker:
+    volumes:
+      - media_test:/media
+volumes:
+  media_test:
