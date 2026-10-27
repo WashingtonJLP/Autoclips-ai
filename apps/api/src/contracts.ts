@@ -2,6 +2,14 @@ import { BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
 
 const url = z.url().refine((v) => /^https?:\/\//.test(v), 'Use URL HTTP(S)');
+const segmentSchema = z
+  .object({
+    start: z.number().finite().min(0),
+    end: z.number().finite().positive(),
+    text: z.string().min(1).max(5000),
+  })
+  .strict()
+  .refine((v) => v.end > v.start, 'Segmento inválido');
 export const sourceSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
@@ -27,9 +35,25 @@ export const jobSchema = z
     operation: z.enum(['transcribe', 'clip']),
     start: z.number().finite().min(0).optional(),
     end: z.number().finite().positive().optional(),
+    segments: z.array(segmentSchema).max(5000).optional(),
+    burn_subtitles: z.boolean().optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
+    if (
+      v.operation === 'transcribe' &&
+      [v.start, v.end, v.segments, v.burn_subtitles].some(
+        (value) => value !== undefined,
+      )
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Transcrição aceita apenas fonte e caminho',
+      });
+    }
+    if (v.burn_subtitles && !v.segments?.length) {
+      ctx.addIssue({ code: 'custom', message: 'Legendas exigem segmentos' });
+    }
     if (
       v.operation === 'clip' &&
       (v.start === undefined ||

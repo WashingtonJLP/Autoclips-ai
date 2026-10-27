@@ -31,3 +31,22 @@ PyAV foi limitado a `>=15,<17`, validado em 16.1.0. PyAV 19 removeu um parâmetr
 usado pelo faster-whisper 1.2.1, conforme o [issue oficial](https://github.com/SYSTRAN/faster-whisper/issues/1589).
 O cache Windows pode ocupar mais espaço quando symlinks não são permitidos;
 nenhuma política de segurança foi modificada para habilitá-los.
+
+## Cortes e legendas
+
+`POST /clip` recebe os campos de mídia/direitos, `start`, `end`, `segments`
+opcionais (timestamps na linha do tempo original) e `burn_subtitles` opcional.
+A API aceita os mesmos campos via `POST /jobs`, com `operation: "clip"`.
+Saída H.264/AAC, 720×1280, 30 fps, até 180 segundos, com barras para preservar
+o enquadramento. Não há rastreamento de rosto nem seleção automática de momentos.
+FFmpeg usa duas threads; modelo não é necessário para cortar.
+
+Legendas são recortadas ao intervalo e deslocadas para zero, exportadas em SRT.
+Com `burn_subtitles: true`, o FFmpeg insere o texto no vídeo. Revise texto e
+tempos antes de publicar. O resultado informa caminhos relativos dos artefatos;
+acesse-os pelo diretório local `media/outputs`, que nunca é versionado.
+
+`node scripts/smoke.mjs` valida dependências, direitos, persistência e fila.
+Após gerar a fixture, `node scripts/smoke.mjs --transcribe` valida ASR real;
+`node scripts/smoke.mjs --media` executa transcrição → corte → simulação.
+Esses testes criam fontes e tarefas de teste no banco local.
