@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from app.contracts import MediaRequest
+from app.media import input_path, sequential, transcribe
 
 app = FastAPI(title="AutoClips AI — worker", version="0.1.0")
 
@@ -16,3 +19,15 @@ def health():
 @app.post("/echo")
 def echo(request: Echo):
     return {"message": request.message, "service": "worker"}
+
+
+@app.post("/transcribe")
+def transcribe_media(request: MediaRequest):
+    path = input_path(request.path)
+    with sequential():
+        try:
+            return transcribe(path)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "Falha de transcrição; verifique modelo e recursos") from exc
