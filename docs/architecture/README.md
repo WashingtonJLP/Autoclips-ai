@@ -21,6 +21,9 @@ Redis guarda a fila em AOF. Migrações são aplicadas antes de iniciar a API.
 
 O dashboard autenticado mostra as últimas 100 fontes e tarefas com atualização
 manual. Artefatos são transmitidos pelo proxy autenticado, sem expor a raiz de mídia.
+O frontend possui seis páginas no layout administrativo: Visão geral, Criar cortes,
+Biblioteca, Publicações, Fontes e Configurações. As listas são paginadas em memória
+e o player é carregado somente ao abrir a prévia. [Detalhes da interface](../development/dashboard.md).
 OAuth usa state em Redis e tokens cifrados. Agendamentos são jobs atrasados, sempre
 de simulação. Nenhum scheduler consulta o PostgreSQL periodicamente.
 

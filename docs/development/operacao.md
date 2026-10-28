@@ -23,21 +23,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-fixture.ps1 -
 Write-Output "Caminho para o dashboard: fixtures/$nome.mp4"
 ```
 
-1. Em **Cadastrar fonte**, nomeie o teste, use a URL do repositório como origem,
+1. Abra **Fontes → Cadastrar fonte**, nomeie o teste, use a URL do repositório como origem,
    licença **Permissão expressa**, evidência
    `https://github.com/WashingtonJLP/Autoclips-ai/blob/main/scripts/create-fixture.ps1`
    e créditos `Fala sintetizada localmente com System.Speech e imagem FFmpeg para teste autorizado`.
    Confirme a revisão dos direitos e salve.
-2. Em **Processar mídia**, selecione essa fonte, informe o caminho exibido pelo
-   comando, mantenha **Transcrever** e **Concluir automaticamente** marcados.
-3. Enfileire. Clique em **Atualizar** para acompanhar as etapas ligadas pelo ID
-   anterior: transcrição, seleção e cortes. A seleção padrão é mock, claramente indicada.
-4. No corte concluído, reproduza o vídeo e use **Baixar MP4** / **Baixar SRT**.
+2. Abra **Criar cortes**, selecione essa fonte, informe o caminho exibido pelo
+   comando, mantenha **Transcrever e criar cortes** e **Concluir automaticamente**.
+3. Clique em **Iniciar produção**. Use **Atualizar** para acompanhar a transcrição,
+   seleção e renderização no painel de progresso. A seleção padrão continua mock.
+4. Clique em **Ver resultado** ou abra **Biblioteca**. Abra a prévia do corte e
+   use **Baixar MP4** / **Baixar SRT**.
    Revise a fala, tempos, título e descrição com atribuição.
    Transcrições com palavras usam blocos de até 42 caracteres/3 s, sincronizados
    aos tempos ASR. Textos antigos sem palavras usam os segmentos originais.
-5. Escolha plataforma/data e clique em **Agendar**. Isso agenda **somente simulação**.
-   Consulte o resultado em **Consultar conexões e agendamentos**. Uma combinação
+5. Na prévia, clique em **Agendar simulação** para abrir **Publicações** com o corte
+   selecionado. Escolha plataforma/data e confirme **Agendar simulação**.
+   Consulte o resultado em **Publicações → Agendamentos e histórico**. Uma combinação
    tarefa/plataforma tem apenas um agendamento; repetir retorna o registro existente,
    sem alterar a data. Não existe remarcação nesta versão.
 
@@ -56,7 +58,7 @@ Licenças em URLs `deed`/`legalcode` são normalizadas sem ampliar as licenças 
 Metadados numéricos auxiliares da API não invalidam a licença.
 
 Busque um tema, abra a evidência e revise direitos de terceiros. Marque a revisão
-e clique em **Importar e produzir automaticamente**. A API consulta novamente os
+e clique em **Importar e criar cortes**. A API consulta novamente os
 metadados antes de registrar a aprovação do operador. O worker compara o SHA-1
 do arquivo com o informado pelo Commons e registra também SHA-256. Importe novamente
 a mesma referência para obter a mesma tarefa, sem outro download/processamento.

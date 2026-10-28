@@ -61,3 +61,12 @@ para blocos curtos sincronizados. A fixture sintética agora escolhe voz e idiom
 correspondentes, sem sobrescrever arquivos. Resultados reais e bloqueios estão
 registrados em [qualidade](qualidade.md#validação-operacional-em-28102026), com
 [procedimento pelo dashboard](operacao.md#iniciar-e-testar-pelo-dashboard).
+
+## Redesign administrativo do frontend
+
+`7fbcb26` substitui a página única por Visão geral, Criar cortes, Biblioteca,
+Publicações, Fontes e Configurações. Funcionalidades migradas para componentes
+reutilizáveis, com filtros/paginação, menu responsivo, player e detalhes avançados
+sob demanda. Nenhuma mudança de backend ou infraestrutura. O teste HTTP do
+frontend valida as integrações existentes sem ativar consumo pago ou publicação.
+Limitações e validações estão em [dashboard](dashboard.md) e [qualidade](qualidade.md).

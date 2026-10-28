@@ -137,3 +137,36 @@ node --env-file=.env scripts/collection-smoke.mjs 'File:Roy Cooper speaks at Sto
 Inferência semântica paga, contas reais OAuth e Scale to Zero no serviço Neon
 dependem de credenciais, configurações e autorização externas. Não se criou
 recurso externo nem se publicou mídia. Veja [operação](operacao.md).
+
+## Redesign do frontend — 28/10/2026
+
+- Dashboard substituído por seis páginas no layout administrativo. O backend,
+  Prisma, worker, filas, infraestrutura e dependências não foram alterados.
+- Lint, formatação, build Next.js e `npm test` aprovados: 24 testes da API e seis
+  testes do frontend. Os novos testes cobrem paginação, relações de etapas,
+  cartões sem players, prévia fechada, JSON avançado sob demanda, escape de
+  conteúdo, formulários e feedback acessível.
+- Somente a imagem web foi reconstruída/reiniciada, mantendo os demais serviços
+  e seus volumes. Autenticação Basic e bearer interno preservados.
+- `scripts/dashboard-smoke.mjs` aprovado pelo frontend em execução: seis rotas
+  retornaram 401 sem credenciais e 200 autenticadas; navegação e link de pular
+  conteúdo presentes; HTML inicial sem players; rejeição CSRF 403 e bloqueio de
+  rota interna não permitida. Health e diagnóstico manual passaram.
+- O teste criou uma fonte com permissão de teste, transcreveu fala sintética com
+  Whisper real, pediu seleção mock, renderizou com FFmpeg e baixou MP4/SRT/JSON
+  pelo proxy. Renderizações e agendamentos duplicados retornaram os mesmos
+  registros. O agendamento terminou em `SIMULATED`, com `published: false`.
+- Descoberta Commons pelo proxy retornou resposta válida. Callback OAuth inválido
+  e caminho de mídia externo foram rejeitados. Não houve OAuth de conta real,
+  publicação real ou consumo de IA paga.
+- O host de navegador estava indisponível e a aprovação automática recusou o
+  controle nativo do Opera. **Não foram testados cliques, responsividade visual,
+  captura de miniaturas ou reprodução interativa em navegador real nesta etapa.**
+  O comportamento dessas interfaces foi revisado no código; HTTP e SSR não
+  substituem essa validação visual.
+
+O relatório local permanece em `artifacts/dashboard-smoke.json`, fora do Git.
+Upload, edição/exclusão de fontes, atualização de configurações e paginação além
+dos 100 registros dependem de endpoints que a API atual não oferece. A interface
+nunca apresenta controles de gravação sem implementação real. Veja o
+[guia das páginas](dashboard.md).

@@ -1,4 +1,6 @@
+'use client';
 import Link from 'next/link';
+import { useState } from 'react';
 import { statusNames } from '../shared/models';
 import Icon from './glyph';
 export function PageHeader({
@@ -131,10 +133,14 @@ export function Advanced({
   value: unknown;
   title?: string;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <details className="advanced">
+    <details
+      className="advanced"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary>{title}</summary>
-      <pre>{JSON.stringify(value, null, 2)}</pre>
+      {open && <pre>{JSON.stringify(value, null, 2)}</pre>}
     </details>
   );
 }

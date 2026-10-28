@@ -10,7 +10,7 @@ import {
 } from '../app/shared/models';
 import ClipCard from '../app/components/clip-card';
 import Preview from '../app/components/preview';
-import { Pagination, Feedback } from '../app/components/ui';
+import { Pagination, Feedback, Advanced } from '../app/components/ui';
 import ProductionForm from '../app/components/production-form';
 
 const task: Task = {
@@ -64,6 +64,13 @@ test('galeria e prévia fechada não montam players nem expõem IDs no texto', (
   assert.ok(!html.includes('interno'));
   assert.ok(html.includes('&lt;script&gt;'));
   assert.ok(html.includes('Assistir'));
+  const advanced = renderToStaticMarkup(
+    <Advanced value={{ id: 'id-interno', result: 'json-pesado' }} />,
+  );
+  assert.ok(
+    !advanced.includes('id-interno') && !advanced.includes('<pre'),
+    'JSON deve ser materializado só ao expandir detalhes',
+  );
   assert.equal(
     renderToStaticMarkup(<Preview task={null} onClose={() => {}} />),
     '',

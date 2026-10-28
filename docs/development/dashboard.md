@@ -83,3 +83,16 @@ Os testes de componentes verificam paginação, rastreamento das relações de t
 ausência de players na galeria fechada, escape de conteúdo e contratos dos formulários.
 A validação de cliques e layout no navegador deve ser registrada separadamente;
 testes HTTP/SSR não equivalem a essa inspeção.
+
+Para testar as integrações pelo proxy autenticado, com uma fixture autorizada já
+presente em `media` e o provedor em mock:
+
+```powershell
+$env:DASHBOARD_FIXTURE_PATH = 'fixtures/e2e-authorized-20261028.mp4'
+node --env-file=.env scripts/dashboard-smoke.mjs
+```
+
+Esse teste cria fonte/tarefas de QA sem apagar registros anteriores, verifica as
+seis páginas com e sem autenticação, CSRF, descoberta Commons, transcrição real,
+seleção mock, renderização, downloads e agendamento simulado. Não realiza OAuth
+com conta real nem cliques de navegador. Relatório: `artifacts/dashboard-smoke.json`.
