@@ -11,7 +11,7 @@ docker compose up -d --build --wait --wait-timeout 180
 ```
 
 O script completa `.env` sem substituir valores existentes. Não habilita APIs pagas.
-Abra http://localhost:3000 e use `DASHBOARD_USER` / `DASHBOARD_PASSWORD` do `.env`.
+Abra http://localhost:3100 e use `DASHBOARD_USER` / `DASHBOARD_PASSWORD` do `.env`.
 Não compartilhe esse arquivo. O banco e os volumes anteriores são preservados;
 as migrações apenas acrescentam campos/tabelas. Não use `down -v` ou `migrate reset`.
 
@@ -113,7 +113,7 @@ silencioso que esconda falhas editoriais. Credenciais não aparecem na configura
 
 Configure `PLATFORM_TOKEN_KEY` (32 bytes em hexadecimal, gerados pelo setup),
 `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` e callback registrado
-`http://localhost:3000/oauth/youtube`. O fluxo usa state em Redis por 10 minutos,
+`http://localhost:3100/oauth/youtube`. O fluxo usa state em Redis por 10 minutos,
 consumo atômico do state e PKCE, com escopo `youtube.upload` e acesso offline.
 Tokens são cifrados com AES-256-GCM no PostgreSQL. Preserve a chave para poder
 decifrar tokens existentes. Não há tokens no navegador nem no retorno de status.

@@ -2,7 +2,9 @@
 
 O frontend Next.js usa seis páginas no mesmo layout, com navegação lateral no
 desktop e menu recolhível no mobile. A autenticação Basic existente protege todas
-as páginas e o proxy. O backend, worker, filas, banco e infraestrutura não mudaram.
+as páginas e o proxy. A arquitetura do backend, worker, filas e banco é preservada.
+Base local: **http://localhost:3100**. A API publicada responde em
+**http://localhost:3101/health**; o proxy dentro do Compose usa `http://api:3001`.
 
 | Página        | Endereço         | Ações                                                           |
 | ------------- | ---------------- | --------------------------------------------------------------- |

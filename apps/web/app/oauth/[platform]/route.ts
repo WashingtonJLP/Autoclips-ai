@@ -14,7 +14,7 @@ export async function GET(
     });
   try {
     const response = await fetch(
-      `${process.env.API_URL ?? 'http://127.0.0.1:3003'}/oauth/callback`,
+      `${process.env.API_URL ?? 'http://127.0.0.1:3101'}/oauth/callback`,
       {
         method: 'POST',
         headers: {

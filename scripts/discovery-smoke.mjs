@@ -1,7 +1,7 @@
 // Consulta pública de metadados. Não baixa mídia nem aprova licenças pelo operador.
 import assert from 'node:assert/strict';
 const response = await fetch(
-  `${process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3003'}/discovery/search`,
+  `${process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3101'}/discovery/search`,
   {
     method: 'POST',
     headers: {

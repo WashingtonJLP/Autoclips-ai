@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3003';
+const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3101';
 const headers = {
   Authorization: `Bearer ${process.env.INTERNAL_API_TOKEN ?? ''}`,
   'Content-Type': 'application/json',
@@ -49,7 +49,7 @@ assert.equal(
   'API deve exigir token',
 );
 assert.equal(
-  (await fetch('http://127.0.0.1:3000/')).status,
+  (await fetch('http://127.0.0.1:3100/')).status,
   401,
   'Dashboard deve exigir autenticação',
 );
@@ -57,12 +57,12 @@ const dashboardHeaders = {
   Authorization: `Basic ${Buffer.from(`${process.env.DASHBOARD_USER}:${process.env.DASHBOARD_PASSWORD}`).toString('base64')}`,
 };
 assert.equal(
-  (await fetch('http://127.0.0.1:3000/', { headers: dashboardHeaders })).status,
+  (await fetch('http://127.0.0.1:3100/', { headers: dashboardHeaders })).status,
   200,
 );
 assert.equal(
   (
-    await fetch('http://127.0.0.1:3000/api/backend/jobs', {
+    await fetch('http://127.0.0.1:3100/api/backend/jobs', {
       method: 'POST',
       headers: {
         ...dashboardHeaders,
@@ -251,7 +251,7 @@ for (const clip of clips) {
   });
   assert.equal(renderedAgain.id, clip.id);
   const artifactViaDashboard = await fetch(
-    `http://127.0.0.1:3000/api/backend/jobs/${clip.id}/artifacts/video`,
+    `http://127.0.0.1:3100/api/backend/jobs/${clip.id}/artifacts/video`,
     { headers: dashboardHeaders },
   );
   assert.equal(artifactViaDashboard.status, 200);

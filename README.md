@@ -9,33 +9,13 @@ verifique origem, atribuição e direitos de terceiros.
 Next.js/TypeScript/Tailwind, NestJS, Prisma/PostgreSQL, Redis/BullMQ e
 Python 3.12/FastAPI/faster-whisper/FFmpeg. CPU/INT8, sem GPU.
 
-Requer Node 22 e Python 3.12. Na raiz:
+O conjunto completo roda pelo Docker Compose descrito abaixo. Python, PostgreSQL
+e Redis são acessíveis somente pela rede Docker, sem portas publicadas no host.
+Migrações são aplicadas no container da API. Node 22 e Python 3.12 locais são usados
+pelas validações de desenvolvimento, sem necessidade de expor os serviços internos.
 
-O caminho recomendado para o conjunto completo é o Docker Compose descrito abaixo.
-Para desenvolver a API fora do Docker, forneça `DATABASE_URL`, `REDIS_HOST` e
-`WORKER_URL` de serviços acessíveis e aplique `npm run db:migrate`. As portas
-de banco/Redis/worker do Compose não são publicadas por padrão.
-
-```powershell
-npm ci
-npm run db:generate
-npm run dev:api
-# Em outro terminal:
-npm run dev:web
-```
-
-Worker em outro terminal:
-
-```powershell
-cd apps/worker-python
-py -3.12 -m venv .venv
-.venv/Scripts/python.exe -m pip install uv==0.13.6
-.venv/Scripts/uv.exe sync --frozen
-.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Dashboard: http://localhost:3000; API: http://localhost:3003/health;
-worker: http://localhost:8000/health e documentação em `/docs`.
+Dashboard: http://localhost:3100; API: http://localhost:3101/health.
+O worker usa `http://worker:8000` dentro da rede Docker, com documentação em `/docs`.
 
 ## Docker
 
@@ -47,7 +27,10 @@ docker compose ps
 ```
 
 No Compose, banco, Redis e worker são internos. Web e API ficam em loopback.
-A porta local 3003 evita conflito com outro projeto existente na máquina.
+As portas do host são exclusivas do AutoClips: `3100 → web:3000` e
+`3101 → api:3001`. As portas 3000/3001 do host ficam reservadas ao MatchPredict.
+O proxy Next.js usa `http://api:3001` internamente; não troque essa URL pela porta
+do host. `npm run dev:web`/`start` usam 3100, e a API fora do Docker usa 3101 por padrão.
 Consulte [implantação](docs/deployment/README.md) para volumes e TrueNAS.
 
 ## Validação

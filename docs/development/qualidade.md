@@ -170,3 +170,36 @@ Upload, edição/exclusão de fontes, atualização de configurações e pagina�
 dos 100 registros dependem de endpoints que a API atual não oferece. A interface
 nunca apresenta controles de gravação sem implementação real. Veja o
 [guia das páginas](dashboard.md).
+
+## Correção de portas — 28/10/2026
+
+Antes da alteração, `docker compose ps`, Compose, `.env` (somente URLs/portas) e
+variáveis reais dos containers foram inspecionados. O AutoClips usava host
+3000/3003, com containers internos web:3000 e api:3001. Nesta máquina, o
+MatchPredict estava publicado em 3002/3001; seu estado foi preservado integralmente.
+
+Depois da alteração:
+
+- Frontend `127.0.0.1:3100 → web:3000`; API `127.0.0.1:3101 → api:3001`.
+- Worker:8000, PostgreSQL:5432 e Redis:6379 sem portas publicadas.
+- API_URL do container web continua `http://api:3001`. Fora do Docker, defaults
+  da API, do Next e dos scripts usam as portas 3101/3100, respectivamente.
+- As mesmas credenciais Basic funcionaram nas seis páginas; anônimo/senha errada
+  retornaram 401. API `/health` retornou 200, `/jobs` sem bearer retornou 401.
+- O POST com Origin `http://localhost:3100` alcançou a validação da API; origens
+  `http://localhost:3000` e `http://localhost:3001` retornaram 403. O navegador usa
+  o proxy na mesma origem, sem nova liberação de CORS.
+- `scripts/ports-smoke.mjs` comparou o snapshot anterior: MatchPredict frontend e
+  backend, worker, PostgreSQL e Redis mantiveram ID, StartedAt, imagem, portas e
+  montagens. A comparação ordena montagens por destino, pois a ordem do retorno
+  de `docker inspect` não é garantida. Nenhum volume/banco foi removido.
+- Lint, Prettier, build API/Next e 30 testes Node passaram. Python: 10 testes
+  aprovados, um teste de symlink pulado por privilégio do Windows; Ruff aprovado.
+- Smoke de dependências, integração de seleção no container e fluxo completo pelo
+  proxy autenticado passaram nas novas portas, com mock de IA e publicação simulada.
+  Validação das páginas por HTTP; não foi realizado novo teste de cliques em navegador.
+
+Os registros locais `artifacts/ports-before.json` e `artifacts/ports-smoke.json`
+documentam a preservação dos serviços e ficam fora do Git. O CI executa a validação
+das portas e da autenticação em uma pilha própria. A porta 3000/3001 ainda aparece
+legitimamente nos health checks/URLs internos e no teste executado dentro da API.

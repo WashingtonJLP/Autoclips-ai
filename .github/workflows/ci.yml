@@ -59,13 +59,14 @@ jobs:
       - run: docker compose config --quiet
       - run: docker compose up -d --build --wait --wait-timeout 180
       - run: node --env-file=.env scripts/smoke.mjs
+      - run: node --env-file=.env scripts/ports-smoke.mjs
       - name: Seleção simulada, orçamento e renderização
         env:
           SELECTION_FIXTURE_PATH: fixtures/selection-smoke.mp4
         run: |
           docker compose exec -T -e SELECTION_FIXTURE_PATH="$SELECTION_FIXTURE_PATH" worker python - < scripts/create-selection-fixture.py
           docker compose exec -T -e SELECTION_FIXTURE_PATH="$SELECTION_FIXTURE_PATH" api node scripts/selection-integration.cjs
-      - run: curl --fail http://127.0.0.1:3000/api/health
+      - run: curl --fail http://127.0.0.1:3100/api/health
       - if: always()
         run: docker compose logs --tail 100
       - if: always()

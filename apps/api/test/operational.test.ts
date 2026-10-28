@@ -214,7 +214,7 @@ test('OAuth usa PKCE, expiração, estado de uso único e cifra tokens sem vazar
     {
       YOUTUBE_CLIENT_ID: 'id',
       YOUTUBE_CLIENT_SECRET: 'secret',
-      YOUTUBE_REDIRECT_URI: 'http://localhost:3000/oauth/youtube',
+      YOUTUBE_REDIRECT_URI: 'http://localhost:3100/oauth/youtube',
       PLATFORM_TOKEN_KEY: 'ab'.repeat(32),
     },
     async (_url, options) => {
@@ -307,7 +307,7 @@ test('renovação OAuth sob demanda preserva refresh token e não retorna creden
     {
       YOUTUBE_CLIENT_ID: 'id',
       YOUTUBE_CLIENT_SECRET: 'secret',
-      YOUTUBE_REDIRECT_URI: 'http://localhost:3000/oauth/youtube',
+      YOUTUBE_REDIRECT_URI: 'http://localhost:3100/oauth/youtube',
       PLATFORM_TOKEN_KEY: key,
     },
     async (_url, options) => {

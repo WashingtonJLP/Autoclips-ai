@@ -9,7 +9,7 @@ assert.ok(
   reference && process.argv.includes('--reviewed'),
   'Informe a referência Commons e --reviewed após revisar direitos e evidência',
 );
-const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3003';
+const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3101';
 const headers = {
   Authorization: `Bearer ${process.env.INTERNAL_API_TOKEN ?? ''}`,
   'Content-Type': 'application/json',

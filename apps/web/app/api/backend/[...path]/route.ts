@@ -22,7 +22,7 @@ async function forward(
   }
   try {
     const response = await fetch(
-      `${process.env.API_URL ?? 'http://127.0.0.1:3003'}/${target}`,
+      `${process.env.API_URL ?? 'http://127.0.0.1:3101'}/${target}`,
       {
         method: request.method,
         headers: {

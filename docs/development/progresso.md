@@ -6,8 +6,8 @@ Os arquivos não rastreados eram a infraestrutura da fase 3 e foram preservados.
 1. Preparação: implementada em `eff7ab4`.
 2. Aplicações: implementadas em `a4b2ba2`; health checks, testes e builds locais.
 3. Infraestrutura: implementada em `2325d7f`; cinco serviços saudáveis, volumes
-   persistentes e publicação em loopback. Porta da API alterada para 3003 para
-   preservar outro projeto que usa 3001.
+   persistentes e publicação em loopback. Naquela etapa, a API foi para 3003;
+   esse mapeamento histórico foi substituído por 3101 na correção descrita abaixo.
 4. Integração: implementada em `c4f6cfb`; migração aplicada, readiness, echo HTTP,
    tarefa BullMQ, fonte autorizada e persistência validados em execução.
 5. Transcrição: implementada em `4a6e6f5`; ASR real em CPU/INT8, três segmentos,
@@ -70,3 +70,12 @@ reutilizáveis, com filtros/paginação, menu responsivo, player e detalhes avan
 sob demanda. Nenhuma mudança de backend ou infraestrutura. O teste HTTP do
 frontend valida as integrações existentes sem ativar consumo pago ou publicação.
 Limitações e validações estão em [dashboard](dashboard.md) e [qualidade](qualidade.md).
+
+## Isolamento de portas — 28/10/2026
+
+AutoClips publica somente `localhost:3100` (web interna 3000) e `localhost:3101`
+(API interna 3001). Worker, PostgreSQL e Redis seguem apenas na rede Docker.
+URLs externas, defaults locais, callback YouTube, scripts, testes e CI atualizados.
+Login e proxy de mesma origem preservados, sem liberar CORS adicional.
+Somente web/API foram recriados; MatchPredict e containers de dados/processamento
+mantiveram IDs, inicialização, imagens, portas e montagens, conferidos por snapshot.

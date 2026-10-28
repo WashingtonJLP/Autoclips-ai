@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3003';
+const base = process.env.SMOKE_API_URL ?? 'http://127.0.0.1:3101';
 async function request(path, body, expected = 200) {
   const response = await fetch(`${base}${path}`, {
     method: body === undefined ? 'GET' : 'POST',

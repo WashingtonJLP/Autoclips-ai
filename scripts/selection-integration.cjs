@@ -13,7 +13,8 @@ const db = new PrismaClient({
 const config = readSelectionConfig({});
 const path =
   process.env.SELECTION_FIXTURE_PATH ?? 'fixtures/selection-smoke.mp4';
-const base = 'http://127.0.0.1:3001';
+// Porta INTERNA do container api; no host, use SELECTION_API_URL=http://127.0.0.1:3101.
+const base = process.env.SELECTION_API_URL ?? 'http://127.0.0.1:3001';
 async function request(path, body, expected = 200) {
   const response = await fetch(`${base}${path}`, {
     method: body === undefined ? 'GET' : 'POST',

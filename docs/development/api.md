@@ -1,6 +1,6 @@
 # API local e direitos
 
-Base no Compose: `http://localhost:3003`. Todas as rotas, exceto `/health`, exigem
+Base no Compose: `http://localhost:3101`. Todas as rotas, exceto `/health`, exigem
 `Authorization: Bearer <INTERNAL_API_TOKEN>`. O dashboard usa Basic Auth e injeta
 esse token no servidor. Não há gestão multiusuário.
 

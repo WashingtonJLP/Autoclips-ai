@@ -1,7 +1,7 @@
 // Teste HTTP do frontend autenticado e de suas integrações. Não substitui cliques no navegador.
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
-const base = process.env.DASHBOARD_URL ?? 'http://127.0.0.1:3000';
+const base = process.env.DASHBOARD_URL ?? 'http://127.0.0.1:3100';
 const headers = {
   Authorization: `Basic ${Buffer.from(`${process.env.DASHBOARD_USER}:${process.env.DASHBOARD_PASSWORD}`).toString('base64')}`,
   'Content-Type': 'application/json',

@@ -74,7 +74,7 @@ services:
       SOURCE_MANIFEST_URLS: ${SOURCE_MANIFEST_URLS:-[]}
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
-      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-http://localhost:3000/oauth/youtube}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-http://localhost:3100/oauth/youtube}
       TIKTOK_CLIENT_ID: ${TIKTOK_CLIENT_ID:-}
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
       TIKTOK_REDIRECT_URI: ${TIKTOK_REDIRECT_URI:-}
@@ -97,7 +97,7 @@ services:
       LLM_MIN_DURATION: ${LLM_MIN_DURATION:-5}
       LLM_MAX_DURATION: ${LLM_MAX_DURATION:-60}
       LLM_MIN_SCORE: ${LLM_MIN_SCORE:-4.5}
-    ports: ['127.0.0.1:3003:3001']
+    ports: ['127.0.0.1:3101:3001']
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -124,7 +124,7 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Execute node scripts/setup-local.mjs}
       DASHBOARD_USER: ${DASHBOARD_USER:?Execute node scripts/setup-local.mjs}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?Execute node scripts/setup-local.mjs}
-    ports: ['127.0.0.1:3000:3000']
+    ports: ['127.0.0.1:3100:3000']
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
