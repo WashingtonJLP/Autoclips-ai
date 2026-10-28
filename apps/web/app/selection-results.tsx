@@ -40,18 +40,23 @@ export default function SelectionResults({
     cost = total('costMicros');
   return (
     <section aria-label="Trechos selecionados" className="mt-5 space-y-4">
-      <p className="text-sm text-slate-400">
-        {String(result.provider)} · {String(result.model)} ·{' '}
-        {result.simulated
-          ? 'Simulação heurística — sem avaliação por LLM real'
-          : 'Sugestões de LLM — revisão editorial obrigatória'}
-      </p>
-      <p className="text-xs text-slate-500">
-        Tokens informados: entrada {input ?? 'não informada'}, saída{' '}
-        {output ?? 'não informada'}. Custo informado:{' '}
-        {cost === null ? 'não informado' : `${(cost / 1000000).toFixed(6)} USD`}
-        .
-      </p>
+      <details className="advanced">
+        <summary>Informações de IA e consumo</summary>
+        <p className="text-sm text-slate-400">
+          {String(result.provider)} · {String(result.model)} ·{' '}
+          {result.simulated
+            ? 'Simulação heurística — sem avaliação por LLM real'
+            : 'Sugestões de LLM — revisão editorial obrigatória'}
+        </p>
+        <p className="text-xs text-slate-500">
+          Tokens informados: entrada {input ?? 'não informada'}, saída{' '}
+          {output ?? 'não informada'}. Custo informado:{' '}
+          {cost === null
+            ? 'não informado'
+            : `${(cost / 1000000).toFixed(6)} USD`}
+          .
+        </p>
+      </details>
       {!clips.length && (
         <p className="text-sm text-slate-400">
           Nenhum trecho passou pelos limites de duração, nota e duplicação.
@@ -73,21 +78,24 @@ export default function SelectionResults({
             {clip.start.toFixed(2)}s → {clip.end.toFixed(2)}s ·{' '}
             {(clip.end - clip.start).toFixed(2)} segundos
           </p>
-          <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-            {(
-              [
-                ['Gancho', clip.scores.hook],
-                ['Contexto', clip.scores.context],
-                ['Valor', clip.scores.value],
-                ['Clareza', clip.scores.clarity],
-              ] as const
-            ).map(([label, score]) => (
-              <div key={label}>
-                <dt className="text-slate-500">{label}</dt>
-                <dd className="mt-1">{score}/10</dd>
-              </div>
-            ))}
-          </dl>
+          <details className="advanced">
+            <summary>Critérios de seleção</summary>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+              {(
+                [
+                  ['Gancho', clip.scores.hook],
+                  ['Contexto', clip.scores.context],
+                  ['Valor', clip.scores.value],
+                  ['Clareza', clip.scores.clarity],
+                ] as const
+              ).map(([label, score]) => (
+                <div key={label}>
+                  <dt className="text-slate-500">{label}</dt>
+                  <dd className="mt-1">{score}/10</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
           <details className="mt-4 text-sm">
             <summary className="cursor-pointer text-slate-400">
               Conferir fala original

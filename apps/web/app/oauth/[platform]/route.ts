@@ -42,7 +42,7 @@ export async function GET(
         },
       );
     const redirect = NextResponse.redirect(
-      new URL('/?oauth=connected', request.url),
+      new URL('/publicacoes?oauth=connected', request.url),
     );
     redirect.headers.set('Cache-Control', 'no-store');
     redirect.headers.set('Referrer-Policy', 'no-referrer');

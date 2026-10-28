@@ -90,5 +90,8 @@ ainda exigem credenciais e autorização. Veja [seleção](docs/development/sele
 Coleta Commons/catálogo autorizado, evidências, download restrito, fluxo automático,
 OAuth, agendamento simulado, autenticação e download de MP4/SRT estão implementados.
 O dashboard exige as credenciais do `.env` geradas por `node scripts/setup-local.mjs`.
+O novo [dashboard administrativo](docs/development/dashboard.md) separa Visão geral,
+Criar cortes, Biblioteca, Publicações, Fontes e Configurações, com paginação e prévias
+carregadas sob demanda. A autenticação e a API existente são preservadas.
 As evidências são revisadas pelo operador; não há verificação jurídica automática
 nem gestão multiusuário. [Operação, segurança e Neon](docs/development/operacao.md).

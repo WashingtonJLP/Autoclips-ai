@@ -7,7 +7,7 @@ async function forward(
   const { path } = await context.params;
   const target = path.join('/');
   if (
-    !/^(sources|llm\/config|platforms|oauth\/(start|callback|refresh)|discovery\/(search|import)|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage|schedule|continue)|jobs\/[a-zA-Z0-9]+\/artifacts\/(video|subtitles|transcript))$/.test(
+    !/^(health|ready|sources|llm\/config|platforms|oauth\/(start|callback|refresh)|discovery\/(search|import)|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage|schedule|continue)|jobs\/[a-zA-Z0-9]+\/artifacts\/(video|subtitles|transcript))$/.test(
       target,
     )
   ) {
