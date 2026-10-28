@@ -9,6 +9,7 @@ import {
   duration,
   paginate,
   statusNames,
+  matchesTask,
 } from '../shared/models';
 import {
   PageHeader,
@@ -59,8 +60,7 @@ export default function LibraryView({
       )
       .filter(
         (t) =>
-          (!status || t.status === status) &&
-          title(t, sources).toLowerCase().includes(query.toLowerCase()),
+          (!status || t.status === status) && matchesTask(t, sources, query),
       ),
     page,
     tab === 'videos' ? 8 : 4,

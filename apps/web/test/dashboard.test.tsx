@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { matchesTask } from '../app/shared/models';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   paginate,
@@ -90,6 +91,13 @@ test('formulário preserva fonte, caminho, modo automático e feedback acessíve
   const html = renderToStaticMarkup(
     <ProductionForm sources={[source]} tasks={[]} onCreated={() => {}} />,
   );
+  assert.equal(
+    matchesTask(task, [source], 'FONTE AUTORIZADA'),
+    true,
+    'A origem continua pesquisável mesmo com título editorial diferente',
+  );
+  assert.equal(matchesTask(task, [source], 'boa ideia'), true);
+  assert.equal(matchesTask(task, [source], 'não existe'), false);
   for (const field of [
     'name="sourceId"',
     'name="path"',

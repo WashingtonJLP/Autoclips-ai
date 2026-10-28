@@ -85,6 +85,13 @@ export function title(task: Task, sources: Source[] = []) {
     'Produção'
   );
 }
+export function matchesTask(task: Task, sources: Source[], query: string) {
+  const search = query.trim().toLocaleLowerCase('pt-BR');
+  return [
+    title(task, sources),
+    sources.find((source) => source.id === task.sourceId)?.name ?? '',
+  ].some((value) => value.toLocaleLowerCase('pt-BR').includes(search));
+}
 export function duration(task: Task) {
   const value =
     Number(task.result?.end ?? task.payload.end) -
