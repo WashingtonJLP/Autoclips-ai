@@ -106,7 +106,8 @@ export default function SelectionResults({
             type="button"
             disabled={busy}
             onClick={() => onRender(clip.id)}
-            className="mt-5 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"
+            className="button primary"
+            style={{ marginTop: 20 }}
           >
             Renderizar trecho com legendas
           </button>
