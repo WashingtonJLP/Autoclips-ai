@@ -45,6 +45,7 @@ export default function Sources() {
     discoveries = paginate(candidates ?? [], page, 6);
   async function search(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSaved('');
     const form = new FormData(event.currentTarget);
     await action.run(async () => {
       const result = await api<Candidate[]>('discovery/search', {
@@ -57,6 +58,7 @@ export default function Sources() {
     }, 'Busca concluída. Revise a licença antes de importar.');
   }
   async function importVideo(item: Candidate) {
+    setSaved('');
     const result = await action.run(
       () =>
         api<Task>('discovery/import', {
@@ -80,6 +82,7 @@ export default function Sources() {
         <button
           className="button primary"
           onClick={() => {
+            setSaved('');
             setTab('cadastrar');
             setPage(1);
           }}
@@ -104,6 +107,7 @@ export default function Sources() {
             disabled={action.busy}
             aria-pressed={tab === key}
             onClick={() => {
+              setSaved('');
               setTab(key);
               setPage(1);
             }}
