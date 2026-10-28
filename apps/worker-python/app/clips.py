@@ -19,7 +19,10 @@ def create_clip(request: ClipRequest) -> dict:
     filters = "scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
     if request.burn_subtitles:
         # Apenas basename UUID gerado pelo servidor é interpolado no filtro.
-        filters += f",subtitles={subtitles.name}"
+        filters += (
+            f",subtitles={subtitles.name}:force_style='FontSize=12,Outline=1,Shadow=0,"
+            "MarginV=24,MarginL=18,MarginR=18'"
+        )
     try:
         run_media(
             [

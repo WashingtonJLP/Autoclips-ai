@@ -58,6 +58,11 @@ def test_download_streams_atomically_and_reuses_file(tmp_path, monkeypatch):
     assert (tmp_path / result["path"]).read_bytes() == b"test"
     assert len(result["sha256"]) == 64
     assert download(request) == result
+    with pytest.raises(HTTPException) as mismatch:
+        download(request.model_copy(update={"key": "cd" * 32, "expected_sha1": "00" * 20}))
+    assert mismatch.value.status_code == 422
+    assert not (tmp_path / "downloads" / f"{'cd' * 32}.mp4").exists()
+    assert (tmp_path / result["path"]).read_bytes() == b"test"
     assert not list(tmp_path.rglob("*.part"))
 
 

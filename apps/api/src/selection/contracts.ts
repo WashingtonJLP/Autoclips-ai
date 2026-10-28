@@ -9,6 +9,16 @@ export const transcriptSchema = z
           start: z.number().finite().min(0),
           end: z.number().finite().positive(),
           text: z.string().trim().min(1).max(4000),
+          words: z
+            .array(
+              z.object({
+                start: z.number().finite().min(0),
+                end: z.number().finite().min(0),
+                word: z.string().min(1).max(200),
+              }),
+            )
+            .max(2000)
+            .optional(),
         }),
       )
       .min(1)
@@ -25,6 +35,18 @@ export const transcriptSchema = z
           code: 'custom',
           message: `Timestamp inválido no segmento ${i}`,
         });
+      s.words?.forEach((word, j) => {
+        if (
+          word.end < word.start ||
+          word.start < s.start - 0.05 ||
+          word.end > s.end + 0.05 ||
+          (j > 0 && word.start < s.words![j - 1].end - 0.05)
+        )
+          ctx.addIssue({
+            code: 'custom',
+            message: `Timestamp de palavra inválido no segmento ${i}`,
+          });
+      });
     });
   });
 export type Transcript = z.infer<typeof transcriptSchema>;

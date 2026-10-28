@@ -196,10 +196,15 @@ for (const clip of clips) {
   const timings = [
     ...srt.matchAll(/(\d\d:\d\d:\d\d,\d{3}) --> (\d\d:\d\d:\d\d,\d{3})/g),
   ].map((m) => [seconds(m[1]), seconds(m[2])]);
-  const expected = transcription.result.segments.filter(
+  const expected = clip.payload.segments.filter(
     (s) => s.start < clip.result.end && s.end > clip.result.start,
   );
   assert.equal(timings.length, expected.length);
+  assert.equal(
+    words(expected.map((s) => s.text).join(' ')).join(' '),
+    actualWords.join(' '),
+    'As legendas devem preservar toda a fala do corte sintético',
+  );
   timings.forEach(([start, end], i) => {
     assert.ok(
       Math.abs(

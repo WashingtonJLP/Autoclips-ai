@@ -16,6 +16,7 @@ import {
 import { createProvider } from './provider';
 import { PrismaUsageLedger, selectionTransaction } from './ledger';
 import { overlap, SelectionService } from './service';
+import { captionSegments } from './captions';
 
 const selectionPayload = z
   .object({ transcriptionTaskId: z.string().min(1) })
@@ -153,7 +154,7 @@ export class SelectionPipeline {
       path,
       start: candidate.start,
       end: candidate.end,
-      segments: transcript.segments.filter(
+      segments: captionSegments(transcript).filter(
         (s) => s.start < candidate.end && s.end > candidate.start,
       ),
       burn_subtitles: true,

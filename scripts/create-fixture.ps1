@@ -1,4 +1,4 @@
-# Mídia sintética local: sem APIs, downloads ou direitos de terceiros.
+﻿# Mídia sintética local: sem APIs, downloads ou direitos de terceiros.
 param([string]$Name = 'authorized-speech')
 $ErrorActionPreference = 'Stop'
 if ($Name -notmatch '^[a-zA-Z0-9_-]{1,100}$') { throw 'Use apenas letras, números, hífen e sublinhado no nome.' }

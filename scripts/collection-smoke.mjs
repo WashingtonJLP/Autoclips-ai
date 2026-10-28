@@ -61,9 +61,29 @@ const downloaded = await completed(initial.id);
 assert.match(downloaded.result.sha256, /^[a-f0-9]{64}$/);
 const source = (await api('sources')).find((s) => s.id === initial.sourceId);
 assert.ok(source.evidence.sha1 && source.verifiedAt && source.mediaUrl);
-const transcription = await completed(
-  (await child(initial.id, 'transcribe')).id,
-);
+let transcription;
+if (process.argv.includes('--new-run')) {
+  // Preserva tarefas/artefatos já concluídos e sua idempotência ao testar outra versão.
+  const runSource = await api('sources', {
+    name: `QA ${new Date().toISOString()} ${source.name}`.slice(0, 200),
+    url: source.url,
+    license: source.license,
+    evidenceUrl: source.evidenceUrl,
+    attribution: source.attribution,
+    commercialUseVerified: true,
+  });
+  transcription = await completed(
+    (
+      await api('jobs', {
+        sourceId: runSource.id,
+        operation: 'transcribe',
+        path: downloaded.result.path,
+        autoRun: true,
+      })
+    ).id,
+  );
+} else
+  transcription = await completed((await child(initial.id, 'transcribe')).id);
 assert.ok(
   transcription.result.segments.length,
   'A mídia revisada deve conter fala para este teste completo',
@@ -121,7 +141,7 @@ for (const task of renders) {
   const timings = [
     ...srt.matchAll(/(\d\d:\d\d:\d\d,\d{3}) --> (\d\d:\d\d:\d\d,\d{3})/g),
   ].map((m) => [seconds(m[1]), seconds(m[2])]);
-  const expected = transcription.result.segments.filter(
+  const expected = clip.payload.segments.filter(
     (s) => s.start < clip.result.end && s.end > clip.result.start,
   );
   assert.equal(timings.length, expected.length);

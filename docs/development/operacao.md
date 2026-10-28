@@ -34,6 +34,8 @@ Write-Output "Caminho para o dashboard: fixtures/$nome.mp4"
    anterior: transcrição, seleção e cortes. A seleção padrão é mock, claramente indicada.
 4. No corte concluído, reproduza o vídeo e use **Baixar MP4** / **Baixar SRT**.
    Revise a fala, tempos, título e descrição com atribuição.
+   Transcrições com palavras usam blocos de até 42 caracteres/3 s, sincronizados
+   aos tempos ASR. Textos antigos sem palavras usam os segmentos originais.
 5. Escolha plataforma/data e clique em **Agendar**. Isso agenda **somente simulação**.
    Consulte o resultado em **Consultar conexões e agendamentos**. Uma combinação
    tarefa/plataforma tem apenas um agendamento; repetir retorna o registro existente,

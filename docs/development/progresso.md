@@ -46,3 +46,18 @@ Testes da integração usam um vídeo sintético e uma transcrição stub declar
 o corte e as legendas são produzidos por FFmpeg real. Nenhum LLM real foi
 executado. A qualidade semântica dos trechos não foi validada por inferência real.
 O padrão continua mock e a publicação continua simulada.
+
+## MVP operacional — 28/10/2026
+
+`8eded52` acrescenta conectores Commons/manifestos, download HTTPS com hash e
+evidência, continuação automática na fila existente, OpenAI opcional com reservas,
+OAuth cifrado, agendamento simulado, autenticação e acesso aos artefatos.
+O dashboard não consulta mais o banco a cada cinco segundos; conexões ociosas
+expiram em 30 s e health checks não usam PostgreSQL. Neon é uma configuração
+opcional, sem substituir ou apagar o volume local.
+
+O teste real também revelou legendas longas demais. A correção usa palavras ASR
+para blocos curtos sincronizados. A fixture sintética agora escolhe voz e idioma
+correspondentes, sem sobrescrever arquivos. Resultados reais e bloqueios estão
+registrados em [qualidade](qualidade.md#validação-operacional-em-28102026), com
+[procedimento pelo dashboard](operacao.md#iniciar-e-testar-pelo-dashboard).
