@@ -12,17 +12,27 @@ import {
   Param,
   Post,
   ServiceUnavailableException,
+  StreamableFile,
 } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Queue, Worker, UnrecoverableError } from 'bullmq';
 import { jobSchema, parse, sourceSchema } from './contracts';
 import { SelectionPipeline } from './selection/pipeline';
+import { Discovery, discoveryRequest, importRequest } from './discovery';
+import { Task } from '@prisma/client';
+import { Readable } from 'node:stream';
+import { Publishing } from './publication';
 
 @Injectable()
 export class Pipeline implements OnModuleInit, OnModuleDestroy {
   readonly db = new PrismaClient({
     adapter: new PrismaPg({
+      max: 3,
+      application_name: 'autoclips-api',
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+      allowExitOnIdle: true,
       connectionString:
         process.env.DATABASE_URL ??
         'postgresql://autoclips:local_example@localhost:5432/autoclips',
@@ -43,6 +53,8 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
   });
   readonly logger = new Logger(Pipeline.name);
   readonly selection = new SelectionPipeline(this.db, this.queue);
+  readonly discovery = new Discovery();
+  readonly publishing = new Publishing(this.db, this.queue);
   worker?: Worker;
   async onModuleInit() {
     await this.db.$connect();
@@ -50,12 +62,19 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       'media',
       async (job) => {
+        if (job.name === 'publish-simulation')
+          return this.publishing.simulate(job.data.publicationId);
         if (job.name === 'echo')
           return this.callWorker('/echo', { message: 'Teste BullMQ' });
         const record = await this.db.task.findUniqueOrThrow({
           where: { id: job.id },
           include: { source: true },
         });
+        // BullMQ pode reentregar após reinício; reutiliza uma etapa já persistida.
+        if (record.status === 'COMPLETED') {
+          await this.advance(record);
+          return record.result;
+        }
         await this.db.task.update({
           where: { id: record.id },
           data: { status: 'PROCESSING', error: null },
@@ -84,6 +103,11 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
               status: 'COMPLETED',
               result: result as Prisma.InputJsonValue,
             },
+          });
+          await this.advance({
+            ...record,
+            status: 'COMPLETED',
+            result: result as Prisma.JsonValue,
           });
           return result;
         } catch (error) {
@@ -122,13 +146,73 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
         },
       );
     }
+    // Recuperação apenas ao iniciar. Não há polling do PostgreSQL em inatividade.
+    for (const task of await this.db.task.findMany({
+      where: { autoRun: true, status: 'COMPLETED', continuationDone: false },
+    }))
+      await this.advance(task);
+    for (const entry of await this.db.publication.findMany({
+      where: { status: 'SCHEDULED' },
+    }))
+      await this.publishing.enqueue(entry);
+  }
+  async advance(task: Task) {
+    try {
+      await this.continueTask(task);
+    } catch {
+      await this.db.task.update({
+        where: { id: task.id },
+        data: {
+          error:
+            'Etapa concluída; continuação automática pendente. Verifique os limites, serviços e trechos; retome pelo dashboard.',
+        },
+      });
+    }
+  }
+  async continueTask(task: Task) {
+    if (!task.autoRun || task.continuationDone || task.status !== 'COMPLETED')
+      return;
+    if (task.operation === 'download') {
+      const result = task.result as { path: string };
+      const next = await this.db.task.upsert({
+        where: { renderKey: `auto-transcribe-${task.id}` },
+        create: {
+          sourceId: task.sourceId,
+          operation: 'transcribe',
+          payload: { path: result.path },
+          autoRun: true,
+          parentId: task.id,
+          renderKey: `auto-transcribe-${task.id}`,
+        },
+        update: {},
+      });
+      if (next.status === 'QUEUED')
+        await this.queue.add('transcribe', {}, { jobId: next.id });
+    } else if (task.operation === 'transcribe') {
+      await this.selection.enqueue(task.id, true);
+    } else if (task.operation === 'select') {
+      const { clips } = task.result as unknown as { clips: { id: string }[] };
+      if (!clips.length)
+        throw new UnrecoverableError(
+          'Nenhum trecho aprovado para renderização automática',
+        );
+      for (const clip of clips)
+        await this.selection.render(task.id, { candidateId: clip.id });
+    }
+    await this.db.task.update({
+      where: { id: task.id },
+      data: { continuationDone: true, error: null },
+    });
   }
   async callWorker(path: string, body?: unknown, timeout = 5000) {
     const response = await fetch(
       `${process.env.WORKER_URL ?? 'http://127.0.0.1:8000'}${path}`,
       {
         method: body === undefined ? 'GET' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.WORKER_API_TOKEN ?? ''}`,
+        },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(timeout),
       },
@@ -158,6 +242,119 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
 @Controller()
 export class PipelineController {
   constructor(@Inject(Pipeline) private readonly pipeline: Pipeline) {}
+  @Get('platforms')
+  platforms() {
+    return this.pipeline.publishing.status();
+  }
+  @Post('oauth/start')
+  oauthStart(@Body() body: unknown) {
+    return this.pipeline.publishing.start(body);
+  }
+  @Post('oauth/callback')
+  oauthCallback(@Body() body: unknown) {
+    return this.pipeline.publishing.callback(body);
+  }
+  @Post('oauth/refresh')
+  oauthRefresh(@Body() body: unknown) {
+    return this.pipeline.publishing.refresh(body);
+  }
+  @Post('jobs/:id/schedule')
+  schedule(@Param('id') id: string, @Body() body: unknown) {
+    return this.pipeline.publishing.schedule(id, body);
+  }
+  @Post('jobs/:id/continue')
+  async resume(@Param('id') id: string) {
+    const task = await this.status(id);
+    if (!task.autoRun || task.status !== 'COMPLETED')
+      throw new BadRequestException(
+        'A continuação exige etapa automática concluída',
+      );
+    await this.pipeline.advance(task);
+    return this.status(id);
+  }
+  @Post('discovery/search')
+  discover(@Body() body: unknown) {
+    const { connector, query } = parse(discoveryRequest, body);
+    return this.pipeline.discovery.search(connector, query);
+  }
+  @Post('discovery/import')
+  async importMedia(@Body() body: unknown) {
+    const { connector, reference, autoRun } = parse(importRequest, body);
+    const item = await this.pipeline.discovery.resolve(connector, reference);
+    const source = await this.pipeline.db.source.upsert({
+      where: { connectorKey: item.connectorKey },
+      create: {
+        name: item.name,
+        url: item.url,
+        license: item.license,
+        evidenceUrl: item.evidenceUrl,
+        attribution: item.attribution,
+        commercialUseVerified: true,
+        verifiedAt: new Date(),
+        mediaUrl: item.mediaUrl,
+        connectorKey: item.connectorKey,
+        evidence: item.evidence as Prisma.InputJsonValue,
+      },
+      update: {},
+    });
+    const task = await this.pipeline.db.task.upsert({
+      where: { renderKey: `download-${item.connectorKey}` },
+      create: {
+        sourceId: source.id,
+        operation: 'download',
+        payload: {
+          url: item.mediaUrl,
+          key: item.connectorKey,
+          ...(connector === 'commons'
+            ? { expected_sha1: item.evidence.sha1 as string }
+            : {}),
+        },
+        renderKey: `download-${item.connectorKey}`,
+        autoRun,
+      },
+      update: {},
+    });
+    if (task.status === 'QUEUED')
+      await this.pipeline.queue.add('download', {}, { jobId: task.id });
+    return task;
+  }
+  @Get('jobs/:id/artifacts/:kind')
+  async artifact(@Param('id') id: string, @Param('kind') kind: string) {
+    const task = await this.status(id);
+    const keys: Record<string, string> = {
+      video: 'video_path',
+      subtitles: 'subtitle_path',
+      transcript: 'transcript_path',
+    };
+    const path = (task.result as Record<string, unknown> | null)?.[keys[kind]];
+    if (
+      task.status !== 'COMPLETED' ||
+      typeof path !== 'string' ||
+      !/^outputs\/[a-f0-9]{32}\.(mp4|srt|json)$/.test(path)
+    )
+      throw new NotFoundException('Artefato não encontrado');
+    const response = await fetch(
+      `${process.env.WORKER_URL ?? 'http://127.0.0.1:8000'}/artifacts/${path.slice(8)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.WORKER_API_TOKEN ?? ''}`,
+        },
+        signal: AbortSignal.timeout(600000),
+      },
+    );
+    if (!response.ok || !response.body)
+      throw new NotFoundException('Artefato indisponível');
+    return new StreamableFile(
+      Readable.fromWeb(
+        response.body as import('node:stream/web').ReadableStream,
+      ),
+      {
+        type:
+          response.headers.get('content-type') ?? 'application/octet-stream',
+        disposition: `inline; filename="${path.slice(8)}"`,
+      },
+    );
+  }
   @Get('llm/config')
   llmConfiguration() {
     return this.pipeline.selection.configuration();
@@ -243,14 +440,14 @@ export class PipelineController {
   }
   @Post('jobs')
   async job(@Body() body: unknown) {
-    const { sourceId, operation, ...payload } = parse(jobSchema, body);
+    const { sourceId, operation, autoRun, ...payload } = parse(jobSchema, body);
     const source = await this.pipeline.db.source.findUnique({
       where: { id: sourceId },
     });
     if (!source || !source.commercialUseVerified)
       throw new NotFoundException('Fonte autorizada não encontrada');
     const task = await this.pipeline.db.task.create({
-      data: { sourceId, operation, payload },
+      data: { sourceId, operation, payload, autoRun },
     });
     try {
       await this.pipeline.queue.add(operation, {}, { jobId: task.id });

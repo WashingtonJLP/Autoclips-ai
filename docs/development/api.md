@@ -1,7 +1,8 @@
 # API local e direitos
 
-Base no Compose: `http://localhost:3003`. A API é para uso local confiável;
-autenticação e controle multiusuário ainda são pendentes.
+Base no Compose: `http://localhost:3003`. Todas as rotas, exceto `/health`, exigem
+`Authorization: Bearer <INTERNAL_API_TOKEN>`. O dashboard usa Basic Auth e injeta
+esse token no servidor. Não há gestão multiusuário.
 
 - `GET /health`: processo vivo; `GET /ready`: PostgreSQL, Redis e worker.
 - `POST /internal/echo`: comunicação NestJS → FastAPI.
@@ -27,5 +28,21 @@ QUEUED persistidas são reenfileiradas no início. Redis usa AOF e volume: a fil
 nunca deve ser tratada como backup. Recuperação após perda total de Redis de
 tarefas PROCESSING requer revisão manual para evitar processamento duplicado.
 
-Saídas ficam no diretório de mídia e metadados no PostgreSQL. Não há download de
-URLs, consumo pago nem publicação real nesta versão.
+Saídas ficam no diretório de mídia e metadados no PostgreSQL. Novas rotas:
+
+- `POST /discovery/search`: `{connector: "commons" | "manifest", query}`.
+- `POST /discovery/import`: `{connector, reference, commercialUseVerified: true, autoRun: true}`;
+  registra evidência, verifica catálogo novamente e enfileira download autorizado.
+- `POST /jobs`: `autoRun: true` opcional para transcrição; etapas seguintes são automáticas.
+- `POST /jobs/:id/continue`: retoma continuação pendente de etapa concluída.
+- `GET /jobs/:id/artifacts/video|subtitles|transcript`: arquivo de saída autenticado.
+- `GET /platforms`: contas conectadas (sem tokens) e últimos agendamentos.
+- `POST /oauth/start`: `{platform: "youtube" | "tiktok"}`; URL oficial de autorização.
+- `POST /oauth/callback`: `{platform, state, code}`; state atômico, tokens cifrados.
+- `POST /oauth/refresh`: `{platform}`; renovação sob demanda, sem retornar tokens.
+- `POST /jobs/:id/schedule`: `{platform, scheduledAt: "ISO-8601 com timezone"}`;
+  somente corte concluído. Repetir tarefa/plataforma retorna o mesmo agendamento.
+
+`/ready` consulta o banco; não o utilize como health check periódico no Neon.
+Consumo pago e publicação real continuam desabilitados por padrão.
+Veja [configuração e operação](operacao.md).

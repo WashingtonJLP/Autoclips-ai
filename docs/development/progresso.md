@@ -21,9 +21,11 @@ Este registro será atualizado com os resultados efetivamente observados.
 
 ## Limites atuais
 
-Ainda pendentes: descoberta por conectores, obtenção autorizada de mídia, validação
-editorial com LLM real, métricas de desempenho
-editorial, autenticação, download de artefatos pelo dashboard e publicação real.
+Conectores, download autorizado, fluxo automático, autenticação, artefatos, OAuth
+e agendamento simulado foram acrescentados em 28/10/2026. Permanecem dependentes
+de credenciais/autorização: inferência editorial paga, OAuth com contas reais,
+publicação real e confirmação do Scale to Zero numa conta Neon existente.
+Métricas editoriais de produção ainda não foram avaliadas.
 Verificação jurídica é revisão do operador com evidência, não uma decisão da IA.
 O servidor TrueNAS/i5-2310 não foi acessado; benchmark e deploy estão pendentes.
 

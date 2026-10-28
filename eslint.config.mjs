@@ -7,6 +7,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/.venv/**',
       '**/next-env.d.ts',
+      '**/artifacts/**',
     ],
   },
   ...tseslint.configs.recommended,

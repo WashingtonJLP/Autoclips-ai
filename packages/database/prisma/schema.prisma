@@ -15,6 +15,9 @@ model Source {
   commercialUseVerified Boolean @default(false)
   createdAt DateTime @default(now())
   tasks Task[]
+  connectorKey String? @unique
+  mediaUrl String?
+  evidence Json?
 }
 model Task {
   id String @id @default(cuid())
@@ -27,10 +30,33 @@ model Task {
   error String?
   renderKey String? @unique
   editorial Json?
+  autoRun Boolean @default(false)
+  continuationDone Boolean @default(false)
+  parentId String?
   llmCalls LlmCall[]
+  publications Publication[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([status, createdAt])
+}
+
+model PlatformAccount {
+  platform String @id
+  encryptedTokens String
+  updatedAt DateTime @updatedAt
+}
+
+model Publication {
+  id String @id @default(cuid())
+  taskId String
+  task Task @relation(fields: [taskId], references: [id])
+  platform String
+  scheduledAt DateTime
+  status String @default("SCHEDULED")
+  result Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([taskId, platform])
 }
 model LlmBudget {
   day String @id

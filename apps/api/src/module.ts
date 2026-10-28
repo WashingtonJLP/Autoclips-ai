@@ -1,5 +1,7 @@
 import { Controller, Get, Module } from '@nestjs/common';
 import { Pipeline, PipelineController } from './pipeline';
+import { APP_GUARD } from '@nestjs/core';
+import { ApiGuard } from './security';
 
 @Controller()
 export class AppController {
@@ -11,6 +13,6 @@ export class AppController {
 
 @Module({
   controllers: [AppController, PipelineController],
-  providers: [Pipeline],
+  providers: [Pipeline, { provide: APP_GUARD, useClass: ApiGuard }],
 })
 export class AppModule {}

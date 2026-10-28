@@ -186,9 +186,110 @@ export function createProvider(
     throw new SelectionError(
       'Chamadas LLM fora do simulador não foram habilitadas',
     );
+  if (config.provider === 'openai') return new OpenAiProvider(env);
   if (config.model === 'mock-v1')
     throw new SelectionError('Configure um modelo local explícito');
   if (/cloud|https?:/i.test(config.model))
     throw new SelectionError('Modelos cloud não são permitidos');
   return new OllamaProvider(env.LLM_OLLAMA_URL ?? 'http://127.0.0.1:11434');
+}
+
+// Preços são limites conservadores em USD por milhão de tokens, definidos pelo
+// operador para o modelo escolhido. Nenhum preço/modelo pago é presumido.
+export class OpenAiProvider implements LlmProvider {
+  readonly name = 'openai';
+  readonly simulated = false;
+  private readonly inputRate: number;
+  private readonly outputRate: number;
+  constructor(
+    private readonly env: NodeJS.ProcessEnv,
+    private readonly transport: typeof fetch = fetch,
+  ) {
+    if (env.LLM_ALLOW_EXTERNAL !== 'true' || env.LLM_ALLOW_PAID !== 'true')
+      throw new SelectionError(
+        'Consumo pago exige autorização explícita LLM_ALLOW_PAID=true',
+      );
+    if (!env.OPENAI_API_KEY || !env.LLM_MODEL || env.LLM_MODEL === 'mock-v1')
+      throw new SelectionError(
+        'Configure OPENAI_API_KEY e um modelo explícito',
+      );
+    this.inputRate = Number(env.LLM_INPUT_USD_PER_MILLION);
+    this.outputRate = Number(env.LLM_OUTPUT_USD_PER_MILLION);
+    if (
+      ![this.inputRate, this.outputRate].every(
+        (v) => Number.isFinite(v) && v > 0 && v <= 10000,
+      )
+    )
+      throw new SelectionError(
+        'Configure os limites positivos de preço do modelo',
+      );
+  }
+  quote(input: number, output: number) {
+    return Math.ceil(input * this.inputRate + output * this.outputRate);
+  }
+  async generate(request: LlmRequest): Promise<LlmResponse> {
+    const { $schema: _schema, ...schema } = responseFormat;
+    void _schema;
+    const response = await this.transport(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(120000),
+        headers: {
+          Authorization: `Bearer ${this.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: request.model,
+          messages: request.messages,
+          max_completion_tokens: request.maxOutputTokens,
+          store: false,
+          response_format: {
+            type: 'json_schema',
+            json_schema: { name: 'clips', strict: true, schema },
+          },
+        }),
+      },
+    );
+    if (!response.ok)
+      throw new SelectionError(`API LLM indisponível (${response.status})`);
+    const raw = await response.text();
+    if (Buffer.byteLength(raw) > 128000)
+      throw new SelectionError('Resposta LLM excede limite');
+    const data = z
+      .object({
+        choices: z
+          .array(
+            z.object({
+              finish_reason: z.string(),
+              message: z.object({
+                content: z.string().nullable(),
+                refusal: z.string().nullable().optional(),
+              }),
+            }),
+          )
+          .min(1),
+        usage: z.object({
+          prompt_tokens: z.number().int().nonnegative(),
+          completion_tokens: z.number().int().nonnegative(),
+        }),
+      })
+      .parse(JSON.parse(raw));
+    const choice = data.choices[0];
+    return {
+      content:
+        choice.finish_reason === 'stop' && !choice.message.refusal
+          ? (choice.message.content ?? '')
+          : '',
+      usage: {
+        inputTokens: data.usage.prompt_tokens,
+        outputTokens: data.usage.completion_tokens,
+        costMicros: this.quote(
+          data.usage.prompt_tokens,
+          data.usage.completion_tokens,
+        ),
+      },
+    };
+  }
 }

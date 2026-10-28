@@ -7,7 +7,7 @@ async function forward(
   const { path } = await context.params;
   const target = path.join('/');
   if (
-    !/^(sources|llm\/config|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage))$/.test(
+    !/^(sources|llm\/config|platforms|oauth\/(start|callback|refresh)|discovery\/(search|import)|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage|schedule|continue)|jobs\/[a-zA-Z0-9]+\/artifacts\/(video|subtitles|transcript))$/.test(
       target,
     )
   ) {
@@ -25,15 +25,31 @@ async function forward(
       `${process.env.API_URL ?? 'http://127.0.0.1:3003'}/${target}`,
       {
         method: request.method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.INTERNAL_API_TOKEN ?? ''}`,
+        },
         body: request.method === 'POST' ? await request.text() : undefined,
         cache: 'no-store',
         signal: AbortSignal.timeout(10000),
       },
     );
-    return new Response(await response.text(), {
+    return new Response(response.body, {
       status: response.status,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      headers: {
+        'Content-Type':
+          response.headers.get('content-type') ??
+          'application/json; charset=utf-8',
+        ...(response.headers.get('content-disposition')
+          ? {
+              'Content-Disposition': response.headers.get(
+                'content-disposition',
+              )!,
+            }
+          : {}),
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
     });
   } catch {
     return Response.json(

@@ -33,6 +33,7 @@ export const jobSchema = z
         'Caminho relativo obrigatório',
       ),
     operation: z.enum(['transcribe', 'clip']),
+    autoRun: z.boolean().optional(),
     start: z.number().finite().min(0).optional(),
     end: z.number().finite().positive().optional(),
     segments: z.array(segmentSchema).max(5000).optional(),
@@ -40,6 +41,11 @@ export const jobSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
+    if (v.autoRun && v.operation !== 'transcribe')
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Fluxo automático começa pela transcrição',
+      });
     if (
       v.operation === 'transcribe' &&
       [v.start, v.end, v.segments, v.burn_subtitles].some(

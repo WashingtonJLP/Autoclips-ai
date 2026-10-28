@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import SelectionResults from './selection-results';
+import Automation from './automation';
 
 type Source = { id: string; name: string; license: string };
 type Task = {
@@ -12,6 +13,9 @@ type Task = {
   result: Record<string, unknown> | null;
   createdAt: string;
   editorial?: { title: string; description: string } | null;
+  autoRun?: boolean;
+  continuationDone?: boolean;
+  parentId?: string | null;
 };
 type LlmSettings = {
   provider: string;
@@ -69,8 +73,6 @@ export default function Dashboard() {
   }, []);
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(timer);
   }, [refresh]);
   async function taskAction(path: string, body: unknown, message: string) {
     setBusy(true);
@@ -111,6 +113,8 @@ export default function Dashboard() {
         if (segments) body.segments = JSON.parse(segments);
         body.burn_subtitles = values.get('burn_subtitles') === 'on';
       }
+      if (kind === 'jobs' && operation === 'transcribe')
+        body.autoRun = values.get('autoRun') === 'on';
       await api(kind, body);
       setMessage(
         kind === 'sources'
@@ -168,6 +172,7 @@ export default function Dashboard() {
           {message}
         </p>
       )}
+      <Automation onChange={refresh} />
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <form
           onSubmit={(event) => void submit(event, 'sources')}
@@ -298,6 +303,13 @@ export default function Dashboard() {
               </label>
             </>
           )}
+          {operation === 'transcribe' && (
+            <label className="flex gap-3 text-sm">
+              <input name="autoRun" type="checkbox" defaultChecked />
+              Concluir automaticamente: selecionar, gerar títulos e renderizar
+              com legendas
+            </label>
+          )}
           <button disabled={busy || !sources.length} className={button}>
             Enfileirar tarefa
           </button>
@@ -316,6 +328,10 @@ export default function Dashboard() {
           Atualizar
         </button>
       </div>
+      <p className="mt-2 text-xs text-slate-400">
+        Atualização manual: clique em Atualizar para acompanhar. Sem consultas
+        periódicas durante a inatividade.
+      </p>
       {!tasks.length ? (
         <p className="mt-5 rounded-lg border border-slate-800 p-6 text-slate-400">
           Nenhuma tarefa cadastrada.
@@ -348,9 +364,31 @@ export default function Dashboard() {
                 </span>
               </div>
               <p className="mt-2 break-all text-xs text-slate-500">{task.id}</p>
+              {task.parentId && (
+                <p className="mt-1 break-all text-xs text-slate-500">
+                  Etapa anterior: {task.parentId}
+                </p>
+              )}
               {task.error && (
                 <p className="mt-3 text-sm text-red-300">{task.error}</p>
               )}
+              {task.autoRun &&
+                !task.continuationDone &&
+                task.status === 'COMPLETED' && (
+                  <button
+                    className={`${button} mt-3`}
+                    disabled={busy}
+                    onClick={() =>
+                      void taskAction(
+                        `jobs/${task.id}/continue`,
+                        {},
+                        'Continuação solicitada.',
+                      )
+                    }
+                  >
+                    Retomar fluxo automático
+                  </button>
+                )}
               {task.editorial && (
                 <div className="mt-4">
                   <h4 className="font-semibold">{task.editorial.title}</h4>
@@ -402,21 +440,80 @@ export default function Dashboard() {
                 </details>
               )}
               {task.status === 'COMPLETED' && task.operation === 'clip' && (
-                <button
-                  type="button"
-                  className="mt-4 text-sm text-amber-300"
-                  onClick={() => {
-                    void api(`jobs/${task.id}/publish`, {})
-                      .then(() =>
-                        setMessage(
-                          'Simulação concluída. Nenhum vídeo foi publicado.',
-                        ),
-                      )
-                      .catch(() => setError('Falha na simulação.'));
-                  }}
-                >
-                  Simular publicação
-                </button>
+                <div className="mt-4 space-y-4">
+                  <video
+                    controls
+                    preload="none"
+                    className="max-h-96 w-full rounded-lg bg-black"
+                    src={`/api/backend/jobs/${task.id}/artifacts/video`}
+                  />
+                  <p className="flex gap-5 text-sm text-emerald-300">
+                    <a
+                      href={`/api/backend/jobs/${task.id}/artifacts/video`}
+                      download
+                    >
+                      Baixar MP4
+                    </a>
+                    <a
+                      href={`/api/backend/jobs/${task.id}/artifacts/subtitles`}
+                      download
+                    >
+                      Baixar SRT
+                    </a>
+                  </p>
+                  <form
+                    className="flex flex-wrap items-end gap-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const data = new FormData(event.currentTarget);
+                      void taskAction(
+                        `jobs/${task.id}/schedule`,
+                        {
+                          platform: data.get('platform'),
+                          scheduledAt: new Date(
+                            String(data.get('scheduledAt')),
+                          ).toISOString(),
+                        },
+                        'Simulação agendada.',
+                      );
+                    }}
+                  >
+                    <label className="text-sm">
+                      Plataforma
+                      <select name="platform" className={field}>
+                        <option value="youtube">YouTube</option>
+                        <option value="tiktok">TikTok</option>
+                      </select>
+                    </label>
+                    <label className="text-sm">
+                      Agendar simulação
+                      <input
+                        type="datetime-local"
+                        name="scheduledAt"
+                        required
+                        className={field}
+                      />
+                    </label>
+                    <button className={button} disabled={busy}>
+                      Agendar
+                    </button>
+                  </form>
+                  <button
+                    type="button"
+                    className="mt-4 text-sm text-amber-300"
+                    onClick={() => {
+                      void api(`jobs/${task.id}/publish`, {})
+                        .then(() =>
+                          setMessage(
+                            'Simulação concluída. Nenhum vídeo foi publicado.',
+                          ),
+                        )
+                        .catch(() => setError('Falha na simulação.'));
+                    }}
+                  >
+                    Simular publicação
+                  </button>
+                </div>
               )}
             </article>
           ))}

@@ -40,6 +40,7 @@ worker: http://localhost:8000/health e documentação em `/docs`.
 ## Docker
 
 ```powershell
+node scripts/setup-local.mjs
 docker compose config --quiet
 docker compose up -d --build --wait
 docker compose ps
@@ -64,7 +65,8 @@ cd apps/worker-python
 
 Base de serviços → infraestrutura Compose → fontes e evidências → fila interna
 → transcrição → cortes verticais e legendas → revisão e publicação autorizada.
-Descoberta automática, seleção inteligente e publicação real são trabalhos futuros.
+Coleta por conectores, seleção e fluxo automático estão integrados. Publicação real
+permanece bloqueada. Veja o [procedimento pelo dashboard](docs/development/operacao.md).
 
 Consulte [arquitetura](docs/architecture/README.md),
 [ambiente](docs/development/ambiente.md) e [decisões](docs/decisions/0001-base.md).
@@ -82,8 +84,11 @@ Documentação: [API](docs/development/api.md), [mídia](docs/development/midia.
 [qualidade](docs/development/qualidade.md) e [progresso](docs/development/progresso.md).
 Seleção por provedores desacoplados, sugestões de títulos/descrições, controle de
 tokens/custos e renderização a partir dos trechos estão implementados com mock
-padrão. O adaptador opcional usa Ollama local; inferência real e qualidade semântica
-ainda exigem validação. Veja [seleção e configuração](docs/development/selecao.md).
-Descoberta, download autorizado e publicação real ainda não foram implementados.
-As evidências são revisadas pelo
-operador; não há verificação jurídica automática nem autenticação multiusuário.
+padrão. Há adaptadores opcionais Ollama local e OpenAI, este com autorização
+de consumo paga e reservas obrigatórias. Inferência real e qualidade semântica
+ainda exigem credenciais e autorização. Veja [seleção](docs/development/selecao.md).
+Coleta Commons/catálogo autorizado, evidências, download restrito, fluxo automático,
+OAuth, agendamento simulado, autenticação e download de MP4/SRT estão implementados.
+O dashboard exige as credenciais do `.env` geradas por `node scripts/setup-local.mjs`.
+As evidências são revisadas pelo operador; não há verificação jurídica automática
+nem gestão multiusuário. [Operação, segurança e Neon](docs/development/operacao.md).

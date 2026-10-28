@@ -5,5 +5,6 @@ package-lock.json
 **/uv.lock
 media
 models
+artifacts
 LICENSE
 **/next-env.d.ts

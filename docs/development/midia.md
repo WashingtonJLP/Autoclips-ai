@@ -14,8 +14,9 @@ Uma trava compartilhada impede transcrições/cortes simultâneos; recebe 429 se
 ocupado. Execute um único processo Uvicorn. A API enfileira uma tarefa por vez.
 Modelos permitidos: tiny/base e variantes `.en`. A qualidade exige revisão humana.
 
-No Windows com FFmpeg no PATH, `./scripts/create-fixture.ps1` gera voz sintética
-local via System.Speech e vídeo de teste. O material não vem de fonte externa.
+No Windows com FFmpeg no PATH, `./scripts/create-fixture.ps1 -Name novo-teste` gera voz sintética
+local via System.Speech e vídeo de teste. Escolhe voz/idioma correspondentes e não
+sobrescreve arquivos. O material não vem de fonte externa.
 Cadastre a origem como PERMISSION, descrevendo a geração local na atribuição e
 usando como evidência o arquivo de script do repositório. Essa declaração vale
 somente para a fixture, não concede autorização para conteúdo de terceiros.
@@ -38,15 +39,16 @@ nenhuma política de segurança foi modificada para habilitá-los.
 opcionais (timestamps na linha do tempo original) e `burn_subtitles` opcional.
 A API aceita os mesmos campos via `POST /jobs`, com `operation: "clip"`.
 Saída H.264/AAC, 720×1280, 30 fps, até 180 segundos, com barras para preservar
-o enquadramento. Não há rastreamento de rosto nem seleção automática de momentos.
+o enquadramento. Não há rastreamento de rosto. A seleção automática usa o serviço
+de seleção da API e pode funcionar em mock ou com provedor explicitamente habilitado.
 FFmpeg usa duas threads; modelo não é necessário para cortar.
 
 Legendas são recortadas ao intervalo e deslocadas para zero, exportadas em SRT.
 Com `burn_subtitles: true`, o FFmpeg insere o texto no vídeo. Revise texto e
 tempos antes de publicar. O resultado informa caminhos relativos dos artefatos;
-acesse-os pelo diretório local `media/outputs`, que nunca é versionado.
+acesse-os pelo dashboard ou diretório local `media/outputs`, que nunca é versionado.
 
-`node scripts/smoke.mjs` valida dependências, direitos, persistência e fila.
-Após gerar a fixture, `node scripts/smoke.mjs --transcribe` valida ASR real;
-`node scripts/smoke.mjs --media` executa transcrição → corte → simulação.
+`node --env-file=.env scripts/smoke.mjs` valida dependências, direitos, persistência e fila.
+O smoke legado usa `fixtures/sample.mp4`; após gerar esse arquivo com `-Name sample`,
+`node --env-file=.env scripts/smoke.mjs --media` executa transcrição → corte → simulação.
 Esses testes criam fontes e tarefas de teste no banco local.

@@ -1,0 +1,7 @@
+# Opcional, somente após configurar uma instância existente e autorizar seu uso.
+# Não altera o volume/banco local. Não use /ready em monitores periódicos.
+services:
+  api:
+    environment:
+      DATABASE_URL: ${NEON_DATABASE_URL:?Configure a URL pooled do Neon com sslmode=require}
+      DIRECT_DATABASE_URL: ${NEON_DIRECT_DATABASE_URL:?Configure a URL direta para migrações}

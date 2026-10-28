@@ -60,17 +60,25 @@ export class SelectionPipeline {
     });
     return { task, transcript, path: payload.path };
   }
-  async enqueue(transcriptionTaskId: string) {
+  async enqueue(transcriptionTaskId: string, autoRun = false) {
     const { task } = await this.transcript(transcriptionTaskId);
-    const selection = await this.db.task.create({
-      data: {
-        sourceId: task.sourceId,
-        operation: 'select',
-        payload: { transcriptionTaskId },
-      },
-    });
+    const data = {
+      sourceId: task.sourceId,
+      operation: 'select',
+      payload: { transcriptionTaskId },
+      autoRun,
+      parentId: task.id,
+    };
+    const selection = autoRun
+      ? await this.db.task.upsert({
+          where: { renderKey: `auto-select-${task.id}` },
+          create: { ...data, renderKey: `auto-select-${task.id}` },
+          update: {},
+        })
+      : await this.db.task.create({ data });
     // Uma tentativa: nenhuma chamada LLM repetida automaticamente após falha desconhecida.
-    await this.queue.add('select', {}, { jobId: selection.id, attempts: 1 });
+    if (selection.status === 'QUEUED')
+      await this.queue.add('select', {}, { jobId: selection.id, attempts: 1 });
     return selection;
   }
   async execute(task: Task) {
@@ -192,10 +200,11 @@ export class SelectionPipeline {
             payload,
             editorial: {
               title: candidate.title,
-              description: candidate.description,
+              description: `${candidate.description}\n\nFonte: ${task.source.url}\n${task.source.attribution}\nLicença: ${task.source.license}\nEvidência: ${task.source.evidenceUrl}`,
               selectionTaskId: selection.id,
               candidateId,
             },
+            parentId: selection.id,
           },
         });
       });

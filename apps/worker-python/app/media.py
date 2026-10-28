@@ -24,7 +24,7 @@ def input_path(relative: str) -> Path:
     path = (root / requested).resolve()
     if requested.is_absolute() or ":" in relative or not path.is_relative_to(root):
         raise HTTPException(400, "Arquivo fora do diretório de mídia")
-    if path.suffix.lower() not in {".mp4", ".mkv", ".mov", ".webm", ".wav", ".mp3", ".m4a"}:
+    if path.suffix.lower() not in {".mp4", ".mkv", ".mov", ".webm", ".ogv", ".wav", ".mp3", ".m4a"}:
         raise HTTPException(400, "Formato de mídia não permitido")
     if not path.is_file():
         raise HTTPException(404, "Arquivo de mídia não encontrado")

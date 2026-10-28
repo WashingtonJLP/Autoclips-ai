@@ -37,9 +37,9 @@ processo; não carrega `.env` automaticamente.
 
 | Variável                            | Padrão                            | Significado                                  |
 | ----------------------------------- | --------------------------------- | -------------------------------------------- |
-| LLM_PROVIDER                        | mock                              | mock ou ollama                               |
+| LLM_PROVIDER                        | mock                              | mock, ollama ou openai                       |
 | LLM_MODEL                           | mock-v1                           | Modelo explícito do provedor                 |
-| LLM_ALLOW_EXTERNAL                  | false                             | Libera apenas o adaptador opcional local     |
+| LLM_ALLOW_EXTERNAL                  | false                             | Habilita provedor fora do mock               |
 | LLM_OLLAMA_URL                      | http://host.docker.internal:11434 | Serviço local, não provisionado pelo Compose |
 | LLM_MAX_INPUT_TOKENS                | 6000                              | Limite estimado por chamada                  |
 | LLM_MAX_OUTPUT_TOKENS               | 1600                              | Máximo de geração por chamada                |
@@ -53,11 +53,16 @@ processo; não carrega `.env` automaticamente.
 | LLM_MIN_SCORE                       | 4.5                               | Nota mínima                                  |
 
 O simulador continua sendo o padrão. Não habilite um serviço externo/pago sem
-autorização específica. Este adaptador aceita apenas hosts locais previstos,
+autorização específica. O adaptador Ollama aceita apenas hosts locais previstos,
 rejeita redirecionamentos e modelos com indicação `cloud`; não inclui credenciais,
 API key ou provisionamento de modelos. O serviço local deve usar modelos já
 disponíveis e inferência local. Ollama não é instalado automaticamente e não é
 recomendado como requisito no i5-2310: o custo de CPU/RAM precisa de benchmark.
+
+O adaptador OpenAI usa credencial exclusivamente por ambiente e saída estruturada,
+sem SDK adicional. Exige autorização `LLM_ALLOW_PAID=true`, modelo explícito,
+preços conservadores positivos e orçamento monetário positivo. Sem isso não envia
+chamadas. Configure conforme [operação](operacao.md#ia-por-api-desabilitada-por-padrão).
 
 ## Economia, precisão e custos
 

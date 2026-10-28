@@ -55,9 +55,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - run: node scripts/setup-local.mjs
       - run: docker compose config --quiet
       - run: docker compose up -d --build --wait --wait-timeout 180
-      - run: node scripts/smoke.mjs
+      - run: node --env-file=.env scripts/smoke.mjs
       - name: Seleção simulada, orçamento e renderização
         env:
           SELECTION_FIXTURE_PATH: fixtures/selection-smoke.mp4

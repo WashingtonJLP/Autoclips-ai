@@ -60,7 +60,7 @@ const integer = (fallback: number, min: number, max: number) =>
   z.coerce.number().int().min(min).max(max).default(fallback);
 const configSchema = z
   .object({
-    provider: z.enum(['mock', 'ollama']).default('mock'),
+    provider: z.enum(['mock', 'ollama', 'openai']).default('mock'),
     model: z.string().min(1).max(100).default('mock-v1'),
     maxInputTokens: integer(6000, 2000, 32000),
     maxOutputTokens: integer(1600, 400, 8000),

@@ -41,6 +41,8 @@ services:
       WHISPER_MODEL: tiny
       WHISPER_CPU_THREADS: '2'
       HF_HOME: /models
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:?Execute node scripts/setup-local.mjs}
+      MEDIA_DOWNLOAD_HOSTS: ${MEDIA_DOWNLOAD_HOSTS:-}
     volumes: [./media:/media, models:/models]
     healthcheck:
       test:
@@ -66,9 +68,23 @@ services:
       DATABASE_URL: postgresql://autoclips:${POSTGRES_PASSWORD:-local_example}@postgres:5432/autoclips
       REDIS_HOST: redis
       REDIS_PORT: '6379'
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Execute node scripts/setup-local.mjs}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:?Execute node scripts/setup-local.mjs}
+      PLATFORM_TOKEN_KEY: ${PLATFORM_TOKEN_KEY:-}
+      SOURCE_MANIFEST_URLS: ${SOURCE_MANIFEST_URLS:-[]}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-http://localhost:3000/oauth/youtube}
+      TIKTOK_CLIENT_ID: ${TIKTOK_CLIENT_ID:-}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+      TIKTOK_REDIRECT_URI: ${TIKTOK_REDIRECT_URI:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       LLM_MODEL: ${LLM_MODEL:-mock-v1}
       LLM_ALLOW_EXTERNAL: ${LLM_ALLOW_EXTERNAL:-false}
+      LLM_ALLOW_PAID: ${LLM_ALLOW_PAID:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_INPUT_USD_PER_MILLION: ${LLM_INPUT_USD_PER_MILLION:-}
+      LLM_OUTPUT_USD_PER_MILLION: ${LLM_OUTPUT_USD_PER_MILLION:-}
       LLM_OLLAMA_URL: ${LLM_OLLAMA_URL:-http://host.docker.internal:11434}
       LLM_MAX_INPUT_TOKENS: ${LLM_MAX_INPUT_TOKENS:-6000}
       LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-1600}
@@ -105,6 +121,9 @@ services:
     environment:
       API_URL: http://api:3001
       HOSTNAME: 0.0.0.0
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Execute node scripts/setup-local.mjs}
+      DASHBOARD_USER: ${DASHBOARD_USER:?Execute node scripts/setup-local.mjs}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?Execute node scripts/setup-local.mjs}
     ports: ['127.0.0.1:3000:3000']
     depends_on:
       api: { condition: service_healthy }
