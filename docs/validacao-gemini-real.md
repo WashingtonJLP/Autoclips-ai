@@ -1,8 +1,8 @@
 # Ativação e teste real do Gemini — 29/10/2026
 
-**Estado atual:** `gemini-3.5-flash-lite` configurado como modelo principal, mas geração
-bloqueada até confirmar a elegibilidade do projeto e da chave. Nenhuma solicitação
-Gemini adicional foi enviada após o HTTP 404 do 2.5 Flash.
+**Estado atual:** elegibilidade gratuita confirmada pelo operador para `gemini-3.5-flash-lite`.
+Foi enviada uma única nova chamada, recusada com HTTP 400. O teto de duas tentativas
+de 29/10/2026 foi atingido; nenhuma seleção real ou MP4/SRT Gemini foi produzido.
 
 O operador confirmou projeto gratuito e cota de vinte requisições/dia para
 `gemini-2.5-flash`. A chave foi preenchida localmente no `.env` da raiz do repositório,
@@ -88,7 +88,7 @@ inclusive consultas de metadados que consumiriam outra tentativa sem comprovar o
 Foi solicitado somente confirmar que o mesmo projeto da chave aparece como Free e
 que o modelo tem cota de requisições maior que zero no AI Studio.
 
-Configuração local atual:
+Configuração local enquanto a verificação estava pendente:
 
 ```dotenv
 LLM_PROVIDER=gemini
@@ -108,3 +108,40 @@ provedores. Continua registrada uma tentativa Gemini falha; resta uma do teste o
 
 Depois da confirmação do projeto, a retomada usa `GEMINI_VALIDATION_MODEL=gemini-3.5-flash-lite`,
 mantendo o teto persistente e sem repetir a chamada ao modelo 2.5 descontinuado.
+
+## Retomada autorizada e resultado real do 3.5 Flash-Lite
+
+O operador confirmou diretamente no AI Studio o nível gratuito e a disponibilidade
+do modelo no projeto da chave, com RPM 15, TPM 250.000 e RPD 500. Foi aplicado
+`GEMINI_FREE_TIER_CONFIRMED=true`, preservando `LLM_ALLOW_PAID=false`, limite local
+persistente de duas tentativas por dia UTC, zero retries e nenhum fallback.
+
+O script foi executado uma única vez com `GEMINI_VALIDATION_MODEL=gemini-3.5-flash-lite`.
+Foram reutilizados vídeo e transcrição reais autorizados, sem solicitar nova inferência
+de Whisper. A API oficial respondeu **HTTP 400**:
+
+> Request contains an invalid argument.
+
+Não houve resposta estruturada com candidatos, títulos, notas ou justificativas.
+O erro não identificou qual argumento foi recusado; a causa específica não foi
+comprovada. É necessária revisão do payload antes de outra validação autorizada.
+Não foi feita nova chamada para investigar, listar modelos ou repetir a análise.
+
+Resultados verificados no ledger e nas tarefas:
+
+- Chamadas novas ao Gemini nesta retomada: **1**.
+- Total de tentativas registradas em 29/10/2026: **2/2**, ambas falhas (404 do 2.5 Flash
+  e 400 do 3.5 Flash-Lite).
+- Tokens de entrada/saída efetivamente informados: **não disponíveis** nas respostas
+  de erro; não foram apresentados como consumo zero medido.
+- Reservas locais: 3.905 tokens de entrada + 3.000 de saída por tentativa, total
+  conservador de 13.810 tokens reservados, distinto de consumo informado pelo Google.
+- Seleção com `gemini-3.5-flash-lite`: tarefa `FAILED`, sem resultado e sem cortes filhos.
+- MP4/SRT a partir desta seleção: **não gerados**, pois não existiu seleção válida.
+- Biblioteca: nenhum novo corte desta seleção foi marcado como IA; os arquivos de
+  testes anteriores não foram reapresentados como sucesso Gemini.
+- Aplicação: provedor Gemini, `simulated=false`, sem mock, fallback ou publicação.
+  Nenhum faturamento foi habilitado e a chave permaneceu somente no `.env` local.
+
+O relatório local é `artifacts/gemini-35-validation-failed.json`. O limite foi mantido,
+sem reset nem aumento, e o teste foi encerrado sem uma terceira tentativa.
