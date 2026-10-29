@@ -36,6 +36,7 @@ export default function ProductionForm({
     [assets, setAssets] = useState<Asset[]>([]),
     [selected, setSelected] = useState(initialAsset ?? ''),
     [inspected, setInspected] = useState<Asset | null>(null),
+    [manual, setManual] = useState(false),
     action = useAction();
   useEffect(() => {
     if (!initialAsset) return;
@@ -79,12 +80,19 @@ export default function ProductionForm({
           );
         asset = result;
       } else if (mode === 'advanced') {
-        return api<Task>('jobs', {
+        const body: Record<string, unknown> = {
           sourceId,
           path: String(form.get('path')).trim(),
-          operation: 'transcribe',
-          autoRun: form.get('autoRun') === 'on',
-        });
+          operation: manual ? 'clip' : 'transcribe',
+        };
+        if (manual) {
+          body.start = Number(form.get('start'));
+          body.end = Number(form.get('end'));
+          const segments = String(form.get('segments') ?? '').trim();
+          if (segments) body.segments = JSON.parse(segments);
+          body.burn_subtitles = form.get('burn_subtitles') === 'on';
+        } else body.autoRun = form.get('autoRun') === 'on';
+        return api<Task>('jobs', body);
       } else {
         const found = assets.find((a) => a.id === selected);
         if (!found) throw new Error('Escolha um vídeo importado');
@@ -319,17 +327,68 @@ export default function ProductionForm({
             Usar arquivo interno (técnico)
           </button>
           {mode === 'advanced' && (
-            <label>
-              Caminho interno
-              <input name="path" required list="known-media" />
-              <datalist id="known-media">
-                {tasks
-                  .filter((t) => typeof t.payload.path === 'string')
-                  .map((t) => (
-                    <option key={t.id} value={t.payload.path} />
-                  ))}
-              </datalist>
-            </label>
+            <>
+              <label>
+                Caminho interno
+                <input name="path" required list="known-media" />
+                <datalist id="known-media">
+                  {tasks
+                    .filter((t) => typeof t.payload.path === 'string')
+                    .map((t) => (
+                      <option key={t.id} value={t.payload.path} />
+                    ))}
+                </datalist>
+              </label>
+              <label>
+                Operação técnica
+                <select
+                  value={manual ? 'clip' : 'transcribe'}
+                  onChange={(e) => setManual(e.target.value === 'clip')}
+                >
+                  <option value="transcribe">Transcrever e criar cortes</option>
+                  <option value="clip">Corte manual por intervalo</option>
+                </select>
+              </label>
+              {manual && (
+                <>
+                  <div className="form-grid">
+                    <label>
+                      Início (segundos)
+                      <input
+                        name="start"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Fim (segundos)
+                      <input
+                        name="end"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        required
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Segmentos revisados (JSON)
+                    <textarea
+                      name="segments"
+                      placeholder={
+                        '[{"start":0,"end":3,"text":"Legenda revisada"}]'
+                      }
+                    />
+                  </label>
+                  <label className="check-label">
+                    <input name="burn_subtitles" type="checkbox" />
+                    Inserir legendas no vídeo
+                  </label>
+                </>
+              )}
+            </>
           )}
         </details>
       </section>

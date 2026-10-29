@@ -193,6 +193,20 @@ export default function CreateView({
                   Retomar fluxo automático
                 </button>
               )}
+              {running && (
+                <button
+                  className="button secondary"
+                  disabled={action.busy}
+                  onClick={() =>
+                    void action.run(async () => {
+                      await api(`jobs/${root.id}/cancel`, {});
+                      await refresh();
+                    }, 'Produção cancelada. A etapa ativa pode terminar no worker, sem iniciar novas etapas.')
+                  }
+                >
+                  Cancelar produção
+                </button>
+              )}
               {root.operation === 'transcribe' &&
                 root.status === 'COMPLETED' &&
                 !root.autoRun && (
