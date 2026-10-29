@@ -71,3 +71,47 @@ def test_real_vertical_clip(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         create_clip(ClipRequest(path="test.mp4", rights=RIGHTS, start=0, end=3))
     assert exc.value.status_code == 422
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg ausente")
+def test_audio_podcast_renders_with_generated_background(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    run_media(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440",
+            "-t",
+            "2",
+            str(tmp_path / "podcast.wav"),
+        ]
+    )
+    result = create_clip(
+        ClipRequest(
+            path="podcast.wav",
+            rights=RIGHTS,
+            start=0,
+            end=1,
+            segments=[Segment(start=0, end=1, text="Podcast autorizado")],
+            burn_subtitles=True,
+        )
+    )
+    info = json.loads(
+        run_media(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_streams",
+                "-of",
+                "json",
+                str(tmp_path / result["video_path"]),
+            ]
+        )
+    )
+    assert any(s.get("width") == 720 and s.get("height") == 1280 for s in info["streams"])
+    assert any(s.get("codec_name") == "aac" for s in info["streams"])

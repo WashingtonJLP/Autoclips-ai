@@ -34,6 +34,7 @@ export const jobSchema = z
       ),
     operation: z.enum(['transcribe', 'clip']),
     autoRun: z.boolean().optional(),
+    language: z.enum(['pt', 'en', 'es']).optional(),
     start: z.number().finite().min(0).optional(),
     end: z.number().finite().positive().optional(),
     segments: z.array(segmentSchema).max(5000).optional(),

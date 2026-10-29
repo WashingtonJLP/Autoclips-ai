@@ -187,11 +187,130 @@ export function createProvider(
       'Chamadas LLM fora do simulador não foram habilitadas',
     );
   if (config.provider === 'openai') return new OpenAiProvider(env);
+  if (config.provider === 'gemini') return new GeminiProvider(env);
   if (config.model === 'mock-v1')
     throw new SelectionError('Configure um modelo local explícito');
   if (/cloud|https?:/i.test(config.model))
     throw new SelectionError('Modelos cloud não são permitidos');
   return new OllamaProvider(env.LLM_OLLAMA_URL ?? 'http://127.0.0.1:11434');
+}
+
+// A gratuidade depende do projeto Google e deve ser confirmada pelo operador.
+// Nunca presume que uma chave Gemini pertence ao nível gratuito.
+export class GeminiProvider implements LlmProvider {
+  readonly name = 'gemini';
+  readonly simulated = false;
+  private readonly inputRate: number;
+  private readonly outputRate: number;
+  constructor(
+    private readonly env: NodeJS.ProcessEnv,
+    private readonly transport: typeof fetch = fetch,
+  ) {
+    if (
+      env.LLM_ALLOW_EXTERNAL !== 'true' ||
+      !env.GEMINI_API_KEY ||
+      !/^gemini-[a-z0-9.-]+$/.test(env.LLM_MODEL ?? '')
+    )
+      throw new SelectionError(
+        'Configure GEMINI_API_KEY, modelo Gemini explícito e LLM_ALLOW_EXTERNAL',
+      );
+    const free = env.GEMINI_FREE_TIER_CONFIRMED === 'true';
+    this.inputRate = free ? 0 : Number(env.LLM_INPUT_USD_PER_MILLION);
+    this.outputRate = free ? 0 : Number(env.LLM_OUTPUT_USD_PER_MILLION);
+    if (
+      !free &&
+      (env.LLM_ALLOW_PAID !== 'true' ||
+        ![this.inputRate, this.outputRate].every(
+          (v) => Number.isFinite(v) && v > 0 && v <= 10000,
+        ))
+    )
+      throw new SelectionError(
+        'Gemini exige confirmação do nível gratuito ou autorização e preços para consumo pago',
+      );
+  }
+  quote(input: number, output: number) {
+    return Math.ceil(input * this.inputRate + output * this.outputRate);
+  }
+  async generate(request: LlmRequest): Promise<LlmResponse> {
+    const { $schema: _schema, ...schema } = responseFormat;
+    void _schema;
+    const response = await this.transport(
+      `https://generativelanguage.googleapis.com/v1beta/models/${request.model}:generateContent`,
+      {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(120000),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.env.GEMINI_API_KEY!,
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              {
+                text: request.messages
+                  .filter((m) => m.role === 'system')
+                  .map((m) => m.content)
+                  .join('\n'),
+              },
+            ],
+          },
+          contents: request.messages
+            .filter((m) => m.role === 'user')
+            .map((m) => ({ role: 'user', parts: [{ text: m.content }] })),
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: request.maxOutputTokens,
+            responseMimeType: 'application/json',
+            responseJsonSchema: schema,
+          },
+        }),
+      },
+    );
+    if (!response.ok)
+      throw new SelectionError(`API Gemini indisponível (${response.status})`);
+    const raw = await response.text();
+    if (Buffer.byteLength(raw) > 128000)
+      throw new SelectionError('Resposta Gemini excede limite');
+    const data = z
+      .object({
+        candidates: z
+          .array(
+            z.object({
+              finishReason: z.string(),
+              content: z
+                .object({
+                  parts: z.array(z.object({ text: z.string().optional() })),
+                })
+                .optional(),
+            }),
+          )
+          .optional(),
+        usageMetadata: z.object({
+          promptTokenCount: z.number().int().nonnegative(),
+          candidatesTokenCount: z.number().int().nonnegative().optional(),
+          thoughtsTokenCount: z.number().int().nonnegative().optional(),
+        }),
+      })
+      .parse(JSON.parse(raw));
+    const input = data.usageMetadata.promptTokenCount;
+    const output =
+      (data.usageMetadata.candidatesTokenCount ?? 0) +
+      (data.usageMetadata.thoughtsTokenCount ?? 0);
+    return {
+      content:
+        data.candidates?.[0]?.finishReason === 'STOP'
+          ? (data.candidates[0].content?.parts
+              .map((p) => p.text ?? '')
+              .join('') ?? '')
+          : '',
+      usage: {
+        inputTokens: input,
+        outputTokens: output,
+        costMicros: this.quote(input, output),
+      },
+    };
+  }
 }
 
 // Preços são limites conservadores em USD por milhão de tokens, definidos pelo

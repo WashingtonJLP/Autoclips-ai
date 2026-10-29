@@ -40,6 +40,52 @@ model Task {
   @@index([status, createdAt])
 }
 
+model MediaAsset {
+  id String @id @default(cuid())
+  identity String @unique
+  platform String
+  externalId String?
+  url String
+  title String
+  author String?
+  duration Float?
+  language String?
+  publishedAt DateTime?
+  sourceId String?
+  mediaUrl String?
+  path String?
+  sha256 String? @unique
+  rightsConfirmed Boolean @default(false)
+  accessible Boolean @default(false)
+  reason String?
+  metadata Json
+  createdAt DateTime @default(now())
+}
+
+model Automation {
+  id String @id @default(cuid())
+  name String
+  kind String
+  enabled Boolean @default(true)
+  intervalMinutes Int
+  config Json
+  createdAt DateTime @default(now())
+  runs SearchRun[]
+}
+
+model SearchRun {
+  id String @id @default(cuid())
+  automationId String
+  automation Automation @relation(fields: [automationId], references: [id])
+  status String @default("PROCESSING")
+  found Int @default(0)
+  processed Int @default(0)
+  error String?
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+  @@index([automationId, createdAt])
+}
+
 model PlatformAccount {
   platform String @id
   encryptedTokens String

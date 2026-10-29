@@ -1,3 +1,5 @@
+import json
+
 from fastapi import HTTPException
 
 from app.contracts import ClipRequest
@@ -24,6 +26,38 @@ def create_clip(request: ClipRequest) -> dict:
             "MarginV=24,MarginL=18,MarginR=18'"
         )
     try:
+        streams = json.loads(
+            run_media(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-protocol_whitelist",
+                    "file,pipe",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "json",
+                    str(source),
+                ],
+                timeout=30,
+            )
+        )["streams"]
+        has_video = any(s.get("codec_type") == "video" for s in streams)
+        inputs = (
+            ["-ss", str(request.start), "-i", str(source)]
+            if has_video
+            else [
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x111827:s=720x1280:r=30",
+                "-ss",
+                str(request.start),
+                "-i",
+                str(source),
+            ]
+        )
         run_media(
             [
                 "ffmpeg",
@@ -34,16 +68,13 @@ def create_clip(request: ClipRequest) -> dict:
                 "-y",
                 "-protocol_whitelist",
                 "file,pipe",
-                "-ss",
-                str(request.start),
-                "-i",
-                str(source),
+                *inputs,
                 "-t",
                 str(request.end - request.start),
                 "-map",
                 "0:v:0",
                 "-map",
-                "0:a?",
+                "0:a?" if has_video else "1:a:0",
                 "-vf",
                 filters,
                 "-filter_threads",

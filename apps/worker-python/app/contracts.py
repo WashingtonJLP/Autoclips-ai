@@ -15,6 +15,7 @@ class MediaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     path: str = Field(min_length=1, max_length=500)
     rights: Rights
+    language: Literal["pt", "en", "es"] | None = None
 
 
 class Segment(BaseModel):

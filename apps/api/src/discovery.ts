@@ -48,6 +48,7 @@ export function commonsCandidate(page: unknown): Discovered | null {
             mime: z.string(),
             mediatype: z.string().optional(),
             size: z.number(),
+            duration: z.number().optional(),
             timestamp: z.string(),
             sha1: z.string(),
             extmetadata: z
@@ -140,7 +141,7 @@ export class Discovery {
       action: 'query',
       format: 'json',
       prop: 'imageinfo',
-      iiprop: 'url|mime|mediatype|size|timestamp|sha1|extmetadata',
+      iiprop: 'url|mime|mediatype|size|dimensions|timestamp|sha1|extmetadata',
       ...(exact
         ? { titles: query }
         : {
@@ -210,7 +211,11 @@ export class Discovery {
       connector === 'commons'
         ? await this.commons(reference, true)
         : await this.manifest();
-    const item = candidates.find((v) => v.reference === reference);
+    const item = candidates.find((v) =>
+      connector === 'commons'
+        ? v.reference.replaceAll('_', ' ') === reference.replaceAll('_', ' ')
+        : v.reference === reference,
+    );
     if (!item)
       throw new BadRequestException(
         'Mídia ou licença não aprovada no catálogo atual',

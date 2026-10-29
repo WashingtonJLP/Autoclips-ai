@@ -43,6 +43,7 @@ services:
       HF_HOME: /models
       WORKER_API_TOKEN: ${WORKER_API_TOKEN:?Execute node scripts/setup-local.mjs}
       MEDIA_DOWNLOAD_HOSTS: ${MEDIA_DOWNLOAD_HOSTS:-}
+      SOURCE_FEED_URLS: ${SOURCE_FEED_URLS:-[]}
     volumes: [./media:/media, models:/models]
     healthcheck:
       test:
@@ -72,6 +73,12 @@ services:
       WORKER_API_TOKEN: ${WORKER_API_TOKEN:?Execute node scripts/setup-local.mjs}
       PLATFORM_TOKEN_KEY: ${PLATFORM_TOKEN_KEY:-}
       SOURCE_MANIFEST_URLS: ${SOURCE_MANIFEST_URLS:-[]}
+      MEDIA_DOWNLOAD_HOSTS: ${MEDIA_DOWNLOAD_HOSTS:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_ACCESS_TOKEN: ${TWITCH_ACCESS_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_FREE_TIER_CONFIRMED: ${GEMINI_FREE_TIER_CONFIRMED:-false}
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-http://localhost:3100/oauth/youtube}

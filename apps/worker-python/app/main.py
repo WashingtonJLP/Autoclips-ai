@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from app.clips import create_clip
 from app.contracts import ClipRequest, MediaRequest
 from app.downloads import DownloadRequest, download
+from app.feeds import FeedRequest, discover_feeds
 from app.media import input_path, media_root, sequential, transcribe
+from app.uploads import upload
 
 app = FastAPI(title="AutoClips AI — worker", version="0.1.0")
 
@@ -45,7 +47,7 @@ def transcribe_media(request: MediaRequest):
     path = input_path(request.path)
     with sequential():
         try:
-            return transcribe(path)
+            return transcribe(path, request.language)
         except HTTPException:
             raise
         except Exception as exc:
@@ -62,6 +64,16 @@ def clip_media(request: ClipRequest):
 def download_media(request: DownloadRequest):
     with sequential():
         return download(request)
+
+
+@app.post("/upload")
+async def upload_media(request: Request, extension: str):
+    return await upload(request, extension)
+
+
+@app.post("/feeds")
+def feeds(request: FeedRequest):
+    return discover_feeds(request)
 
 
 @app.get("/artifacts/{filename}")

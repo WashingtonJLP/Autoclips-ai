@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
@@ -89,6 +90,8 @@ def output_path(extension: str) -> Path:
     if not directory.resolve().is_relative_to(root):
         raise HTTPException(400, "Diretório de saída inválido")
     directory.mkdir(parents=True, exist_ok=True)
+    if shutil.disk_usage(directory).free < 1024**3:
+        raise HTTPException(507, "Armazenamento insuficiente; libere espaço para continuar")
     return directory / f"{uuid4().hex}.{extension}"
 
 
@@ -96,7 +99,7 @@ def relative(path: Path) -> str:
     return path.relative_to(media_root()).as_posix()
 
 
-def transcribe(path: Path) -> dict:
+def transcribe(path: Path, language: str | None = None) -> dict:
     global _model
     duration(path)
     if _model is None:
@@ -114,7 +117,7 @@ def transcribe(path: Path) -> dict:
             download_root=os.getenv("HF_HOME", "../../models"),
         )
     segments, info = _model.transcribe(
-        str(path), beam_size=1, vad_filter=True, word_timestamps=True
+        str(path), beam_size=1, vad_filter=True, word_timestamps=True, language=language
     )
     result = {
         "language": info.language,

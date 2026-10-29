@@ -17,6 +17,8 @@ import { createProvider } from './provider';
 import { PrismaUsageLedger, selectionTransaction } from './ledger';
 import { overlap, SelectionService } from './service';
 import { captionSegments } from './captions';
+import { productionOptions } from '../production';
+import { hash } from '../connectors';
 
 const selectionPayload = z
   .object({ transcriptionTaskId: z.string().min(1) })
@@ -69,6 +71,9 @@ export class SelectionPipeline {
       payload: { transcriptionTaskId },
       autoRun,
       parentId: task.id,
+      editorial:
+        (task.editorial as import('@prisma/client').Prisma.InputJsonValue) ??
+        undefined,
     };
     const selection = autoRun
       ? await this.db.task.upsert({
@@ -91,26 +96,39 @@ export class SelectionPipeline {
     } = await this.transcript(transcriptionTaskId);
     if (task.sourceId !== original.sourceId)
       throw new BadRequestException('Fonte incompatível');
+    const options = (task.editorial as { options?: unknown } | null)?.options;
+    const settingsKey = options ? hash(options) : undefined;
     const rendered = await this.db.task.findMany({
       where: {
         sourceId: task.sourceId,
         operation: 'clip',
         status: { in: ['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED'] },
         payload: { path: ['path'], equals: path },
+        ...(settingsKey
+          ? { editorial: { path: ['settingsKey'], equals: settingsKey } }
+          : {}),
       },
       select: { payload: true },
     });
-    const excluded = rendered.flatMap((r) => {
-      const p = r.payload as Record<string, unknown>;
-      return typeof p.start === 'number' &&
-        typeof p.end === 'number' &&
-        p.end > p.start
-        ? [{ start: p.start, end: p.end }]
-        : [];
-    });
+    const reprocess = (task.editorial as { reprocess?: boolean } | null)
+      ?.reprocess;
+    const excluded = reprocess
+      ? []
+      : rendered.flatMap((r) => {
+          const p = r.payload as Record<string, unknown>;
+          return typeof p.start === 'number' &&
+            typeof p.end === 'number' &&
+            p.end > p.start
+            ? [{ start: p.start, end: p.end }]
+            : [];
+        });
+    const config = options
+      ? { ...this.config, ...productionOptions.parse(options) }
+      : this.config;
+    const service = new SelectionService(this.provider, this.ledger, config);
     return {
       transcriptionTaskId,
-      ...(await this.service.select(task.id, transcript, excluded)),
+      ...(await service.select(task.id, transcript, excluded)),
     };
   }
   async render(selectionTaskId: string, body: unknown) {
@@ -141,7 +159,17 @@ export class SelectionPipeline {
       throw new BadRequestException('Seleção incompatível com a transcrição');
     const renderKey = createHash('sha256')
       .update(
-        JSON.stringify([task.sourceId, path, candidate.start, candidate.end]),
+        JSON.stringify([
+          task.sourceId,
+          path,
+          candidate.start,
+          candidate.end,
+          (selection.editorial as { options?: unknown } | null)?.options ??
+            null,
+          (selection.editorial as { reprocess?: boolean } | null)?.reprocess
+            ? selection.id
+            : null,
+        ]),
       )
       .digest('hex');
     const existing = await this.db.task.findUnique({ where: { renderKey } });
@@ -175,10 +203,21 @@ export class SelectionPipeline {
             operation: 'clip',
             status: { in: ['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED'] },
             payload: { path: ['path'], equals: path },
+            ...((selection.editorial as { options?: unknown } | null)?.options
+              ? {
+                  editorial: {
+                    path: ['settingsKey'],
+                    equals: hash(
+                      (selection.editorial as { options: unknown }).options,
+                    ),
+                  },
+                }
+              : {}),
           },
           select: { payload: true },
         });
         if (
+          !(selection.editorial as { reprocess?: boolean } | null)?.reprocess &&
           previous.some((p) => {
             const payload = p.payload as Record<string, unknown>;
             return (
@@ -204,6 +243,13 @@ export class SelectionPipeline {
               description: `${candidate.description}\n\nFonte: ${task.source.url}\n${task.source.attribution}\nLicença: ${task.source.license}\nEvidência: ${task.source.evidenceUrl}`,
               selectionTaskId: selection.id,
               candidateId,
+              settingsKey: hash(
+                (selection.editorial as { options?: unknown } | null)
+                  ?.options ?? {},
+              ),
+              simulated:
+                (selection.result as { simulated?: boolean } | null)
+                  ?.simulated ?? this.provider.simulated,
             },
             parentId: selection.id,
           },

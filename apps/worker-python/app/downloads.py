@@ -1,8 +1,10 @@
 """Download direto e limitado de hosts aprovados, sem extratores de plataformas."""
 
 import hashlib
+import http.client
 import ipaddress
 import os
+import shutil
 import socket
 import time
 import urllib.error
@@ -39,9 +41,36 @@ def validate_url(url: str):
         or parsed.port not in {None, 443}
     ):
         raise HTTPException(400, "Host de download não autorizado")
-    for entry in socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM):
+    addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    if not addresses:
+        raise HTTPException(400, "Host sem endereço público")
+    for entry in addresses:
         if not ipaddress.ip_address(entry[4][0]).is_global:
             raise HTTPException(400, "Endereço de rede não permitido")
+    return addresses[0][4][0]
+
+
+class PinnedHTTPS(http.client.HTTPSConnection):
+    def __init__(self, host, *, address, **kwargs):
+        super().__init__(host, **kwargs)
+        self.address = address
+
+    def connect(self):
+        # Conecta ao IP validado, preservando SNI e validação do certificado.
+        # Não há segunda resolução DNS, proxy ou túnel que permita DNS rebinding.
+        self.sock = socket.create_connection((self.address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class PinnedHandler(urllib.request.HTTPSHandler):
+    def __init__(self, address):
+        super().__init__()
+        self.address = address
+
+    def https_open(self, req):
+        return self.do_open(
+            lambda host, **kwargs: PinnedHTTPS(host, address=self.address, **kwargs), req
+        )
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -51,14 +80,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def download(request: DownloadRequest) -> dict:
     url = str(request.url)
-    validate_url(url)
+    address = validate_url(url)
     extension = Path(urlsplit(url).path).suffix.lower()
-    if extension not in {".mp4", ".webm", ".ogv", ".mov"}:
+    if extension not in {".mp4", ".webm", ".ogv", ".mov", ".mp3", ".wav", ".m4a"}:
         raise HTTPException(400, "Formato de download não permitido")
     directory = media_root() / "downloads"
     if not directory.resolve().is_relative_to(media_root()):
         raise HTTPException(400, "Diretório inválido")
     directory.mkdir(parents=True, exist_ok=True)
+    if shutil.disk_usage(directory).free < 1024**3:
+        raise HTTPException(507, "Armazenamento insuficiente; libere espaço antes de importar")
     target = directory / f"{request.key}{extension}"
     if not target.resolve().is_relative_to(media_root()):
         raise HTTPException(400, "Arquivo fora do diretório de mídia")
@@ -77,7 +108,9 @@ def download(request: DownloadRequest) -> dict:
     source_digest = hashlib.sha1()
     deadline = time.monotonic() + 600
     try:
-        opener = urllib.request.build_opener(NoRedirect)
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), NoRedirect, PinnedHandler(address)
+        )
         req = urllib.request.Request(url, headers={"User-Agent": "AutoClipsAI/0.1"})
         with opener.open(req, timeout=30) as response, temporary.open("xb") as output:
             if int(response.headers.get("Content-Length", "0")) > limit:

@@ -13,7 +13,13 @@ import {
   Post,
   ServiceUnavailableException,
   StreamableFile,
+  Req,
+  Query,
 } from '@nestjs/common';
+import { IncomingMessage } from 'node:http';
+import { Production } from './production';
+import { Automations, automationSchema } from './automation';
+import { hash } from './connectors';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Queue, Worker, UnrecoverableError } from 'bullmq';
@@ -55,6 +61,8 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
   readonly selection = new SelectionPipeline(this.db, this.queue);
   readonly discovery = new Discovery();
   readonly publishing = new Publishing(this.db, this.queue);
+  readonly production = new Production(this);
+  readonly automations = new Automations(this);
   worker?: Worker;
   async onModuleInit() {
     await this.db.$connect();
@@ -62,6 +70,28 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       'media',
       async (job) => {
+        if (job.name === 'continuation') {
+          const task = await this.db.task.findUniqueOrThrow({
+            where: { id: job.data.taskId },
+          });
+          try {
+            await this.continueTask(task);
+          } catch (error) {
+            await this.db.task.update({
+              where: { id: task.id },
+              data: {
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : 'Falha na continuação',
+              },
+            });
+            throw error;
+          }
+          return { continued: true };
+        }
+        if (job.name === 'discovery-run')
+          return this.automations.run(job.data.automationId);
         if (job.name === 'publish-simulation')
           return this.publishing.simulate(job.data.publicationId);
         if (job.name === 'echo')
@@ -70,6 +100,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           where: { id: job.id },
           include: { source: true },
         });
+        if (record.status === 'CANCELLED') return { cancelled: true };
         // BullMQ pode reentregar após reinício; reutiliza uma etapa já persistida.
         if (record.status === 'COMPLETED') {
           await this.advance(record);
@@ -97,6 +128,11 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
                   request,
                   30 * 60 * 1000,
                 );
+          if (
+            (await this.db.task.findUniqueOrThrow({ where: { id: record.id } }))
+              .status === 'CANCELLED'
+          )
+            return { cancelled: true };
           await this.db.task.update({
             where: { id: record.id },
             data: {
@@ -111,6 +147,11 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           });
           return result;
         } catch (error) {
+          if (
+            (await this.db.task.findUniqueOrThrow({ where: { id: record.id } }))
+              .status === 'CANCELLED'
+          )
+            return { cancelled: true };
           const retrying =
             record.operation !== 'select' &&
             !(error instanceof UnrecoverableError) &&
@@ -135,8 +176,26 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     this.queue.on('error', (error) => this.logger.error(error.message));
     // Recupera tarefas persistidas se Redis foi perdido ou houve falha ao enfileirar.
     for (const task of await this.db.task.findMany({
-      where: { status: 'QUEUED' },
+      where: { status: { in: ['QUEUED', 'PROCESSING', 'RETRYING'] } },
     })) {
+      if (task.operation === 'select' && task.status !== 'QUEUED') {
+        await this.db.task.update({
+          where: { id: task.id },
+          data: {
+            status: 'FAILED',
+            error:
+              'Seleção interrompida. Revise o consumo antes de reprocessar; chamadas LLM não serão repetidas automaticamente.',
+          },
+        });
+        continue;
+      }
+      const existing = await this.queue.getJob(task.id);
+      if (
+        existing &&
+        ['failed', 'completed'].includes(await existing.getState())
+      ) {
+        await existing.remove();
+      }
       await this.queue.add(
         task.operation,
         {},
@@ -155,47 +214,117 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
       where: { status: 'SCHEDULED' },
     }))
       await this.publishing.enqueue(entry);
+    for (const entry of await this.db.automation.findMany())
+      await this.automations.schedule(entry);
+    await this.db.searchRun.updateMany({
+      where: { status: 'PROCESSING' },
+      data: {
+        status: 'INTERRUPTED',
+        error:
+          'Busca interrompida pelo reinício; próxima execução usará deduplicação.',
+        completedAt: new Date(),
+      },
+    });
   }
   async advance(task: Task) {
     try {
       await this.continueTask(task);
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Falha ao continuar produção';
+      this.logger.error(`Continuação ${task.id}: ${message}`);
       await this.db.task.update({
         where: { id: task.id },
         data: {
-          error:
-            'Etapa concluída; continuação automática pendente. Verifique os limites, serviços e trechos; retome pelo dashboard.',
+          error: message,
         },
       });
+      await this.queue.add(
+        'continuation',
+        { taskId: task.id },
+        { jobId: `continue-${task.id}`, attempts: 3 },
+      );
     }
   }
   async continueTask(task: Task) {
     if (!task.autoRun || task.continuationDone || task.status !== 'COMPLETED')
       return;
     if (task.operation === 'download') {
-      const result = task.result as { path: string };
+      const result = task.result as { path: string; sha256?: string };
+      const editorial = task.editorial as {
+        assetId?: string;
+        options?: { language?: string };
+        reprocess?: boolean;
+      } | null;
+      if (editorial?.assetId) {
+        const existing = result.sha256
+          ? await this.db.mediaAsset.findUnique({
+              where: { sha256: result.sha256 },
+            })
+          : null;
+        await this.db.mediaAsset.update({
+          where: { id: editorial.assetId },
+          data: {
+            path: existing?.path ?? result.path,
+            ...(existing ? {} : { sha256: result.sha256 }),
+            accessible: true,
+          },
+        });
+      }
+      const nextKey = `auto-transcribe-${result.sha256 && !editorial?.reprocess ? hash([result.sha256, editorial?.options ?? null, this.selection.config]) : task.id}`;
       const next = await this.db.task.upsert({
-        where: { renderKey: `auto-transcribe-${task.id}` },
+        where: { renderKey: nextKey },
         create: {
           sourceId: task.sourceId,
           operation: 'transcribe',
-          payload: { path: result.path },
+          payload: {
+            path: result.path,
+            ...(editorial?.options?.language &&
+            editorial.options.language !== 'auto'
+              ? { language: editorial.options.language }
+              : {}),
+          },
+          editorial: (task.editorial as Prisma.InputJsonValue) ?? undefined,
           autoRun: true,
           parentId: task.id,
-          renderKey: `auto-transcribe-${task.id}`,
+          renderKey: nextKey,
         },
         update: {},
       });
+      if (next.parentId !== task.id)
+        await this.db.task.update({
+          where: { id: task.id },
+          data: { result: { ...result, reusedTaskId: next.id } },
+        });
       if (next.status === 'QUEUED')
         await this.queue.add('transcribe', {}, { jobId: next.id });
     } else if (task.operation === 'transcribe') {
+      const result = task.result as { segments?: unknown[] } | null;
+      if (Array.isArray(result?.segments) && !result.segments.length) {
+        await this.db.task.update({
+          where: { id: task.id },
+          data: {
+            continuationDone: true,
+            error:
+              'A transcrição terminou, mas nenhuma fala foi reconhecida. Não há trechos para selecionar; confira o áudio e o idioma.',
+          },
+        });
+        return;
+      }
       await this.selection.enqueue(task.id, true);
     } else if (task.operation === 'select') {
       const { clips } = task.result as unknown as { clips: { id: string }[] };
-      if (!clips.length)
-        throw new UnrecoverableError(
-          'Nenhum trecho aprovado para renderização automática',
-        );
+      if (!clips.length) {
+        await this.db.task.update({
+          where: { id: task.id },
+          data: {
+            continuationDone: true,
+            error:
+              'A transcrição terminou, mas nenhum trecho adequado foi encontrado. Revise a duração e o conteúdo.',
+          },
+        });
+        return;
+      }
       for (const clip of clips)
         await this.selection.render(task.id, { candidateId: clip.id });
     }
@@ -218,14 +347,19 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
       },
     );
     if (!response.ok) {
+      const detail = (await response.json().catch(() => ({}))) as {
+        detail?: unknown;
+      };
+      const message =
+        typeof detail.detail === 'string'
+          ? detail.detail
+          : `Worker rejeitou a tarefa (${response.status})`;
       if (
         response.status >= 400 &&
         response.status < 500 &&
         response.status !== 429
       )
-        throw new UnrecoverableError(
-          `Worker rejeitou a tarefa (${response.status})`,
-        );
+        throw new UnrecoverableError(message);
       throw new ServiceUnavailableException(
         `Worker indisponível (${response.status})`,
       );
@@ -242,6 +376,115 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
 @Controller()
 export class PipelineController {
   constructor(@Inject(Pipeline) private readonly pipeline: Pipeline) {}
+  @Get('media')
+  media() {
+    return this.pipeline.db.mediaAsset.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+  @Post('media/inspect')
+  inspect(@Body() body: unknown) {
+    return this.pipeline.production.inspect(body);
+  }
+  @Post('productions')
+  production(@Body() body: unknown) {
+    return this.pipeline.production.start(body);
+  }
+  @Post('media/upload')
+  async upload(
+    @Req() request: IncomingMessage,
+    @Query('sourceId') sourceId: string,
+    @Query('extension') extension: string,
+  ) {
+    const source = await this.pipeline.db.source.findUnique({
+      where: { id: sourceId ?? '' },
+    });
+    if (!source?.commercialUseVerified)
+      throw new BadRequestException(
+        'Cadastre e selecione uma fonte com autorização antes do upload',
+      );
+    if (!/^(mp4|webm|mov|mkv|ogv|wav|mp3|m4a)$/.test(extension ?? ''))
+      throw new BadRequestException('Formato não permitido');
+    const response = await fetch(
+      `${process.env.WORKER_URL ?? 'http://127.0.0.1:8000'}/upload?extension=${extension}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.WORKER_API_TOKEN ?? ''}`,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: Readable.toWeb(request) as ReadableStream,
+        duplex: 'half',
+        signal: AbortSignal.timeout(600000),
+      } as RequestInit,
+    );
+    const result = await response.json();
+    if (!response.ok)
+      throw new BadRequestException(
+        typeof result.detail === 'string'
+          ? result.detail
+          : 'Não foi possível validar o arquivo enviado',
+      );
+    return this.pipeline.production.registerUpload(source.id, result);
+  }
+  @Post('discovery/multisearch')
+  multiSearch(@Body() body: unknown) {
+    return this.pipeline.automations.search(body);
+  }
+  @Get('automations')
+  automations() {
+    return this.pipeline.db.automation.findMany({
+      include: { runs: { orderBy: { createdAt: 'desc' }, take: 10 } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+  @Post('automations')
+  createAutomation(@Body() body: unknown) {
+    return this.pipeline.automations.create(body);
+  }
+  @Post('automations/:id/toggle')
+  toggleAutomation(@Param('id') id: string, @Body() body: unknown) {
+    return this.pipeline.automations.toggle(id, body);
+  }
+  @Post('automations/:id/run')
+  async runAutomation(@Param('id') id: string) {
+    await this.pipeline.db.automation.findUniqueOrThrow({ where: { id } });
+    const job = await this.pipeline.queue.add(
+      'discovery-run',
+      { automationId: id },
+      {
+        jobId: `manual-search-${id}-${Math.floor(Date.now() / 3600000)}`,
+        attempts: 1,
+      },
+    );
+    return { id: job.id };
+  }
+  @Post('jobs/:id/cancel')
+  async cancel(@Param('id') id: string) {
+    const all = await this.pipeline.db.task.findMany({
+      select: { id: true, parentId: true },
+    });
+    const ids = new Set([id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const t of all)
+        if (t.parentId && ids.has(t.parentId) && !ids.has(t.id)) {
+          ids.add(t.id);
+          changed = true;
+        }
+    }
+    await this.pipeline.db.task.updateMany({
+      where: { id: { in: [...ids] } },
+      data: {
+        status: 'CANCELLED',
+        continuationDone: true,
+        error: 'Produção cancelada pelo usuário',
+      },
+    });
+    return { cancelled: true };
+  }
   @Get('platforms')
   platforms() {
     return this.pipeline.publishing.status();
@@ -433,10 +676,32 @@ export class PipelineController {
     });
   }
   @Post('sources')
-  source(@Body() body: unknown) {
-    return this.pipeline.db.source.create({
-      data: { ...parse(sourceSchema, body), verifiedAt: new Date() },
+  async source(@Body() body: unknown) {
+    const { monitoring, ...data } = parse(
+      sourceSchema.extend({
+        monitoring: automationSchema
+          .omit({ name: true, kind: true })
+          .optional(),
+      }),
+      body,
+    );
+    const source = await this.pipeline.db.source.create({
+      data: {
+        ...data,
+        verifiedAt: new Date(),
+        ...(monitoring
+          ? { evidence: { monitoring: monitoring as Prisma.InputJsonValue } }
+          : {}),
+      },
     });
+    if (monitoring)
+      await this.pipeline.automations.create({
+        ...monitoring,
+        name: source.name,
+        kind: 'source',
+        config: { ...monitoring.config, sourceId: source.id },
+      });
+    return source;
   }
   @Post('jobs')
   async job(@Body() body: unknown) {
@@ -446,8 +711,17 @@ export class PipelineController {
     });
     if (!source || !source.commercialUseVerified)
       throw new NotFoundException('Fonte autorizada não encontrada');
-    const task = await this.pipeline.db.task.create({
-      data: { sourceId, operation, payload, autoRun },
+    const renderKey = hash([
+      'technical',
+      sourceId,
+      operation,
+      payload,
+      autoRun ?? false,
+    ]);
+    const task = await this.pipeline.db.task.upsert({
+      where: { renderKey },
+      update: {},
+      create: { sourceId, operation, payload, autoRun, renderKey },
     });
     try {
       await this.pipeline.queue.add(operation, {}, { jobId: task.id });
