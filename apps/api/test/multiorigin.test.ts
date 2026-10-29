@@ -6,6 +6,7 @@ import {
   Connectors,
   hash,
   isoDuration,
+  VimeoConnector,
 } from '../src/connectors';
 import { productionOptions, Production, sameResource } from '../src/production';
 import { searchConfig, automationSchema } from '../src/automation';
@@ -169,4 +170,16 @@ test('Gemini exige escolha explícita da modalidade e usa schema oficial sem red
   assert.equal(calls, 1);
   assert.equal(response.usage?.outputTokens, 7);
   assert.equal(response.usage?.costMicros, 0);
+});
+test('link removido retorna explicação útil em vez de indisponibilidade transitória', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response('{}', { status: 404 });
+    await assert.rejects(
+      () => new VimeoConnector().resolve(new URL('https://vimeo.com/1')),
+      /não encontrado/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });

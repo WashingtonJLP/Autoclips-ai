@@ -93,6 +93,10 @@ sua política. Downloads existentes e uploads idênticos são reaproveitados. A 
 de produção inclui configurações de cortes e provedor/modelo; arquivos baixados também
 usam SHA-256 para reaproveitar transcrições equivalentes.
 
+Antes de disponibilizar um corte, FFprobe valida H.264, dimensões 720×1280,
+áudio AAC quando a origem contém áudio e duração com tolerância de 300 ms.
+Falhas removem os artefatos incompletos e são mostradas como falha real.
+
 ## IA
 
 Mock, Ollama e OpenAI permanecem. Gemini usa a API oficial `generateContent`, JSON

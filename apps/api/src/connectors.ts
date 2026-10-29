@@ -50,6 +50,14 @@ async function json(url: URL | string, headers?: Record<string, string>) {
     redirect: 'error',
     signal: AbortSignal.timeout(20000),
   });
+  if (response.status === 404)
+    throw new BadRequestException(
+      'Vídeo ou canal não encontrado na plataforma. Confira o link ou envie o original autorizado.',
+    );
+  if ([401, 403].includes(response.status))
+    throw new BadRequestException(
+      'A plataforma recusou o acesso aos metadados. Revise a integração ou envie o original autorizado.',
+    );
   if (!response.ok)
     throw new ServiceUnavailableException(
       `Consulta à plataforma falhou (${response.status})`,

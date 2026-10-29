@@ -99,6 +99,36 @@ def create_clip(request: ClipRequest) -> dict:
             ],
             cwd=output.parent,
         )
+        info = json.loads(
+            run_media(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_streams",
+                    "-show_format",
+                    "-of",
+                    "json",
+                    str(output),
+                ],
+                timeout=30,
+            )
+        )
+        expected = request.end - request.start
+        valid_video = any(
+            s.get("codec_name") == "h264" and s.get("width") == 720 and s.get("height") == 1280
+            for s in info["streams"]
+        )
+        source_audio = any(s.get("codec_type") == "audio" for s in streams)
+        valid_audio = not source_audio or any(s.get("codec_name") == "aac" for s in info["streams"])
+        if (
+            not valid_video
+            or not valid_audio
+            or abs(float(info["format"]["duration"]) - expected) > 0.3
+        ):
+            raise HTTPException(
+                422, "O corte gerado não passou na validação de formato, áudio ou duração"
+            )
     except Exception:
         output.unlink(missing_ok=True)
         subtitles.unlink(missing_ok=True)
@@ -111,4 +141,10 @@ def create_clip(request: ClipRequest) -> dict:
         "start": request.start,
         "end": request.end,
         "publishing": "simulation",
+        "quality": {
+            "validated": True,
+            "duration": float(info["format"]["duration"]),
+            "video_codec": "h264",
+            "audio_validated": valid_audio,
+        },
     }
