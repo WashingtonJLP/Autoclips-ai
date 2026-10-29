@@ -1,5 +1,9 @@
 # AutoClips AI
 
+O fluxo por link, upload, vídeos importados e monitoramento está descrito em
+[Criação multiorigem](docs/multiorigem.md). Consulte também os
+[testes reais da expansão](docs/validacao-multiorigem.md).
+
 Plataforma MIT para produzir vídeos curtos com reutilização comercial verificada.
 Publicação permanece em **simulação**. CC BY/CC0 não garantem monetização:
 verifique origem, atribuição e direitos de terceiros.
