@@ -100,14 +100,17 @@ test('formulário preserva fonte, caminho, modo automático e feedback acessíve
   assert.equal(matchesTask(task, [source], 'não existe'), false);
   for (const field of [
     'name="sourceId"',
-    'name="path"',
+    'name="url"',
     'name="autoRun"',
-    'Iniciar produção',
+    'Gerar cortes',
+    'Colar link',
+    'Escolher vídeo',
+    'Enviar arquivo',
   ])
     assert.ok(html.includes(field));
   assert.ok(
     !html.includes('type="file"'),
-    'Não deve prometer upload sem endpoint existente',
+    'Entrada inicial por link não deve exigir upload',
   );
   const notice = renderToStaticMarkup(
     <Feedback error="Falha" message="Concluído" loading />,

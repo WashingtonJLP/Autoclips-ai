@@ -25,6 +25,9 @@ export default function ClipCard({
             {title(task)}
           </button>
         </h3>
+        {task.editorial?.simulated && (
+          <span className="badge">Seleção de teste (mock)</span>
+        )}
         <p className="muted small">{date(task.createdAt)}</p>
       </div>
     </article>

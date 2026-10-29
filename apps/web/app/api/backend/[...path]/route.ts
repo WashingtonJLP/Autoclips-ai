@@ -7,7 +7,7 @@ async function forward(
   const { path } = await context.params;
   const target = path.join('/');
   if (
-    !/^(health|ready|sources|llm\/config|platforms|oauth\/(start|callback|refresh)|discovery\/(search|import)|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage|schedule|continue)|jobs\/[a-zA-Z0-9]+\/artifacts\/(video|subtitles|transcript))$/.test(
+    !/^(health|ready|sources|llm\/config|platforms|oauth\/(start|callback|refresh)|discovery\/(search|import|multisearch)|media|media\/(inspect|upload)|productions|automations|automations\/[a-zA-Z0-9]+\/(run|toggle)|jobs|jobs\/[a-zA-Z0-9]+|jobs\/[a-zA-Z0-9]+\/(publish|select|render-selection|llm-usage|schedule|continue|cancel)|jobs\/[a-zA-Z0-9]+\/artifacts\/(video|subtitles|transcript))$/.test(
       target,
     )
   ) {
@@ -22,17 +22,19 @@ async function forward(
   }
   try {
     const response = await fetch(
-      `${process.env.API_URL ?? 'http://127.0.0.1:3101'}/${target}`,
+      `${process.env.API_URL ?? 'http://127.0.0.1:3101'}/${target}${request.nextUrl.search}`,
       {
         method: request.method,
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type':
+            request.headers.get('content-type') ?? 'application/json',
           Authorization: `Bearer ${process.env.INTERNAL_API_TOKEN ?? ''}`,
         },
-        body: request.method === 'POST' ? await request.text() : undefined,
+        body: request.method === 'POST' ? request.body : undefined,
+        duplex: 'half',
         cache: 'no-store',
-        signal: AbortSignal.timeout(10000),
-      },
+        signal: AbortSignal.timeout(600000),
+      } as RequestInit,
     );
     return new Response(response.body, {
       status: response.status,

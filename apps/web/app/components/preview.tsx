@@ -54,6 +54,11 @@ export default function Preview({
         <div className="preview-details">
           <span className="eyebrow">PRONTO PARA REVISÃO</span>
           <h3>{title(task)}</h3>
+          {task.editorial?.simulated && (
+            <p className="notice">
+              Seleção simulada para teste; não é análise semântica real.
+            </p>
+          )}
           <p className="description">
             {task.editorial?.description ??
               'Revise o vídeo e suas legendas antes de agendar.'}
@@ -75,6 +80,13 @@ export default function Preview({
                 Baixar SRT
               </a>
             ) : null}
+            <Link
+              className="button secondary"
+              href={`/criar?fonte=${task.sourceId}`}
+              prefetch={false}
+            >
+              Gerar novos cortes
+            </Link>
             <Link
               className="button secondary"
               href={`/publicacoes?video=${task.id}`}

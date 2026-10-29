@@ -29,6 +29,7 @@ export type Task = {
     title: string;
     description: string;
     candidateId?: string;
+    simulated?: boolean;
   } | null;
   autoRun?: boolean;
   continuationDone?: boolean;
@@ -65,6 +66,7 @@ export const statusNames: Record<string, string> = {
   RETRYING: 'Nova tentativa',
   COMPLETED: 'Concluído',
   FAILED: 'Falhou',
+  CANCELLED: 'Cancelado',
   SCHEDULED: 'Agendado',
   SIMULATED: 'Simulado',
 };
@@ -128,6 +130,13 @@ export function descendants(tasks: Task[], rootId: string) {
         ids.add(task.id);
         changed = true;
       }
+    for (const task of tasks) {
+      const reused = task.result?.reusedTaskId;
+      if (ids.has(task.id) && typeof reused === 'string' && !ids.has(reused)) {
+        ids.add(reused);
+        changed = true;
+      }
+    }
   }
   return tasks.filter((t) => ids.has(t.id));
 }

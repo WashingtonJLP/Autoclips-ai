@@ -13,6 +13,7 @@ import {
   Advanced,
 } from '../components/ui';
 import SourceForm from '../components/source-form';
+import AutomationForm from '../components/automation-form';
 type Candidate = {
   reference: string;
   name: string;
@@ -100,6 +101,7 @@ export default function Sources() {
         {[
           ['minhas', 'Minhas fontes'],
           ['descobrir', 'Descobrir vídeos'],
+          ['automatica', 'Busca automática'],
           ['cadastrar', 'Cadastrar fonte'],
         ].map(([key, label]) => (
           <button
@@ -116,6 +118,7 @@ export default function Sources() {
           </button>
         ))}
       </div>
+      {tab === 'automatica' && <AutomationForm />}
       {tab === 'cadastrar' && (
         <div className="two-columns">
           <SourceForm

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, useAction, useResources } from '../shared/api';
 import {
@@ -25,9 +25,11 @@ import Icon from '../components/glyph';
 export default function CreateView({
   initialTask,
   initialSource,
+  initialAsset,
 }: {
   initialTask?: string;
   initialSource?: string;
+  initialAsset?: string;
 }) {
   const { data, loading, error, refresh } = useResources([
     'sources',
@@ -74,6 +76,21 @@ export default function CreateView({
     (task) =>
       task.autoRun && task.status === 'COMPLETED' && !task.continuationDone,
   );
+  const running = chain.some(
+    (t) =>
+      ['QUEUED', 'PROCESSING', 'RETRYING'].includes(t.status) ||
+      (t.autoRun &&
+        t.status === 'COMPLETED' &&
+        !t.continuationDone &&
+        !t.error),
+  );
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [running, refresh]);
   return (
     <>
       <PageHeader
@@ -90,6 +107,7 @@ export default function CreateView({
       />
       <div className="two-columns">
         <ProductionForm
+          initialAsset={initialAsset}
           initialSource={initialSource}
           sources={sources}
           tasks={tasks}
