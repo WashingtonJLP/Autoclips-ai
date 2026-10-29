@@ -40,6 +40,49 @@ export interface LlmProvider {
   quote(inputTokens: number, outputTokens: number): number | null;
   generate(request: LlmRequest): Promise<LlmResponse>;
 }
+export class LlmUnavailableError extends SelectionError {}
+export class LlmHttpError extends LlmUnavailableError {
+  constructor(
+    readonly status: number,
+    readonly retryAfterMs = 0,
+  ) {
+    super(`API de IA recusou a solicitação (${status})`);
+  }
+  get retryable() {
+    return [429, 500, 502, 503, 504].includes(this.status);
+  }
+}
+export class UnavailableProvider implements LlmProvider {
+  readonly simulated = false;
+  constructor(
+    readonly name: string,
+    readonly reason: string,
+  ) {}
+  quote() {
+    return 0;
+  }
+  async generate(): Promise<LlmResponse> {
+    throw new LlmUnavailableError(this.reason);
+  }
+}
+async function boundedResponse(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new LlmUnavailableError('IA retornou uma resposta vazia');
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > 128000) throw new SelectionError('Resposta IA excede limite');
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel();
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
 export function estimateInput(request: LlmRequest): number {
   // Limite conservador por bytes UTF-8, incluindo instruções e schema; não é consumo medido.
   return (
@@ -85,6 +128,8 @@ export class MockLlmProvider implements LlmProvider {
         last: last.id,
         title: `Uma ideia em foco: ${topic}`.slice(0, 100),
         description: `Neste recorte, acompanhe uma ideia sobre ${topic}. Reveja o contexto e os detalhes na fonte original.`,
+        reason:
+          'Seleção de teste simulada; não houve análise semântica por IA.',
         scores: {
           hook: /\?|como|por que|erro|segredo/i.test(first.text) ? 8 : 5,
           context: 7,
@@ -263,15 +308,27 @@ export class GeminiProvider implements LlmProvider {
             maxOutputTokens: request.maxOutputTokens,
             responseMimeType: 'application/json',
             responseJsonSchema: schema,
+            ...(/^gemini-2\.5-flash/.test(request.model)
+              ? { thinkingConfig: { thinkingBudget: 0 } }
+              : {}),
           },
         }),
       },
     );
-    if (!response.ok)
-      throw new SelectionError(`API Gemini indisponível (${response.status})`);
-    const raw = await response.text();
-    if (Buffer.byteLength(raw) > 128000)
-      throw new SelectionError('Resposta Gemini excede limite');
+    if (!response.ok) {
+      const retry = response.headers.get('retry-after');
+      const seconds = Number(retry);
+      const delay =
+        retry && !Number.isFinite(seconds)
+          ? Math.max(0, Date.parse(retry) - Date.now())
+          : seconds * 1000;
+      await response.body?.cancel();
+      throw new LlmHttpError(
+        response.status,
+        Number.isFinite(delay) ? Math.min(30000, delay) : 0,
+      );
+    }
+    const raw = await boundedResponse(response);
     const data = z
       .object({
         candidates: z

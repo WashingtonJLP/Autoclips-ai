@@ -12,26 +12,37 @@ import {
   readSelectionConfig,
   transcriptSchema,
   SelectedClip,
+  selectionVersion,
+  selectionPolicy,
 } from './contracts';
-import { createProvider } from './provider';
+import { createProvider, UnavailableProvider, LlmProvider } from './provider';
 import { PrismaUsageLedger, selectionTransaction } from './ledger';
 import { overlap, SelectionService } from './service';
 import { captionSegments } from './captions';
 import { productionOptions } from '../production';
 import { hash } from '../connectors';
+import { sentenceSegments } from './sentences';
 
 const selectionPayload = z
   .object({ transcriptionTaskId: z.string().min(1) })
   .strict();
 export class SelectionPipeline {
   readonly config = readSelectionConfig();
-  readonly provider = createProvider(this.config);
+  readonly provider: LlmProvider;
   readonly ledger: PrismaUsageLedger;
   readonly service: SelectionService;
   constructor(
     private readonly db: PrismaClient,
     private readonly queue: Queue,
   ) {
+    try {
+      this.provider = createProvider(this.config);
+    } catch (error) {
+      this.provider = new UnavailableProvider(
+        this.config.provider,
+        error instanceof Error ? error.message : 'Provedor não configurado',
+      );
+    }
     this.ledger = new PrismaUsageLedger(db);
     this.service = new SelectionService(
       this.provider,
@@ -43,6 +54,8 @@ export class SelectionPipeline {
     return {
       ...this.config,
       simulated: this.provider.simulated,
+      available: !(this.provider instanceof UnavailableProvider),
+      selectionVersion,
       budget: await this.ledger.summary(),
     };
   }
@@ -64,7 +77,24 @@ export class SelectionPipeline {
     return { task, transcript, path: payload.path };
   }
   async enqueue(transcriptionTaskId: string, autoRun = false) {
-    const { task } = await this.transcript(transcriptionTaskId);
+    const { task, transcript, path } =
+      await this.transcript(transcriptionTaskId);
+    const editorial = task.editorial as {
+      options?: unknown;
+      reprocess?: boolean;
+    } | null;
+    const effectiveConfig = {
+      ...this.config,
+      ...(editorial?.options ? productionOptions.parse(editorial.options) : {}),
+    };
+    const renderKey = `selection-${hash([
+      task.sourceId,
+      path,
+      transcript,
+      selectionPolicy(effectiveConfig),
+      !(this.provider instanceof UnavailableProvider),
+      editorial?.reprocess ? task.id : null,
+    ])}`;
     const data = {
       sourceId: task.sourceId,
       operation: 'select',
@@ -75,16 +105,37 @@ export class SelectionPipeline {
         (task.editorial as import('@prisma/client').Prisma.InputJsonValue) ??
         undefined,
     };
-    const selection = autoRun
-      ? await this.db.task.upsert({
-          where: { renderKey: `auto-select-${task.id}` },
-          create: { ...data, renderKey: `auto-select-${task.id}` },
-          update: {},
-        })
-      : await this.db.task.create({ data });
+    const selection = await this.db.task.upsert({
+      where: { renderKey },
+      create: { ...data, renderKey },
+      update: autoRun ? { autoRun: true } : {},
+    });
+    if (selection.parentId !== task.id)
+      await this.db.task.update({
+        where: { id: task.id },
+        data: {
+          result: {
+            ...(task.result as Record<
+              string,
+              import('@prisma/client').Prisma.InputJsonValue
+            >),
+            reusedTaskId: selection.id,
+          },
+        },
+      });
     // Uma tentativa: nenhuma chamada LLM repetida automaticamente após falha desconhecida.
     if (selection.status === 'QUEUED')
       await this.queue.add('select', {}, { jobId: selection.id, attempts: 1 });
+    if (
+      autoRun &&
+      selection.status === 'COMPLETED' &&
+      !selection.continuationDone
+    )
+      await this.queue.add(
+        'continuation',
+        { taskId: selection.id },
+        { jobId: `select-continue-${selection.id}` },
+      );
     return selection;
   }
   async execute(task: Task) {
@@ -97,13 +148,26 @@ export class SelectionPipeline {
     if (task.sourceId !== original.sourceId)
       throw new BadRequestException('Fonte incompatível');
     const options = (task.editorial as { options?: unknown } | null)?.options;
-    const settingsKey = options ? hash(options) : undefined;
+    const settingsKey = hash([
+      selectionVersion,
+      options ?? {},
+      this.config.provider,
+      this.config.model,
+    ]);
     const rendered = await this.db.task.findMany({
       where: {
         sourceId: task.sourceId,
         operation: 'clip',
         status: { in: ['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED'] },
         payload: { path: ['path'], equals: path },
+        AND: [
+          {
+            editorial: {
+              path: ['selectionOrigin'],
+              equals: this.provider.simulated ? 'mock' : 'llm',
+            },
+          },
+        ],
         ...(settingsKey
           ? { editorial: { path: ['settingsKey'], equals: settingsKey } }
           : {}),
@@ -128,7 +192,17 @@ export class SelectionPipeline {
     const service = new SelectionService(this.provider, this.ledger, config);
     return {
       transcriptionTaskId,
-      ...(await service.select(task.id, transcript, excluded)),
+      ...(await service.select(
+        task.id,
+        transcript,
+        excluded,
+        hash([
+          selectionVersion,
+          task.sourceId,
+          path,
+          reprocess ? task.id : null,
+        ]),
+      )),
     };
   }
   async render(selectionTaskId: string, body: unknown) {
@@ -148,13 +222,22 @@ export class SelectionPipeline {
     const { transcriptionTaskId } = selectionPayload.parse(selection.payload);
     const { task, transcript, path } =
       await this.transcript(transcriptionTaskId);
-    const result = selection.result as unknown as { clips: SelectedClip[] };
+    const result = selection.result as unknown as {
+      clips: SelectedClip[];
+      version?: number;
+      selectionOrigin?: string;
+      provider?: string;
+      model?: string;
+      warnings?: string[];
+    };
+    const units =
+      result.version === 2 ? sentenceSegments(transcript) : transcript.segments;
     const candidate = result.clips.find((c) => c.id === candidateId);
     if (!candidate) throw new NotFoundException('Trecho não encontrado');
     if (
       selection.sourceId !== task.sourceId ||
-      transcript.segments[candidate.first]?.start !== candidate.start ||
-      transcript.segments[candidate.last]?.end !== candidate.end
+      units[candidate.first]?.start !== candidate.start ||
+      units[candidate.last]?.end !== candidate.end
     )
       throw new BadRequestException('Seleção incompatível com a transcrição');
     const renderKey = createHash('sha256')
@@ -164,6 +247,10 @@ export class SelectionPipeline {
           path,
           candidate.start,
           candidate.end,
+          selectionVersion,
+          result.provider ?? this.config.provider,
+          result.model ?? this.config.model,
+          result.selectionOrigin ?? 'legacy',
           (selection.editorial as { options?: unknown } | null)?.options ??
             null,
           (selection.editorial as { reprocess?: boolean } | null)?.reprocess
@@ -203,13 +290,26 @@ export class SelectionPipeline {
             operation: 'clip',
             status: { in: ['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED'] },
             payload: { path: ['path'], equals: path },
+            AND: [
+              {
+                editorial: {
+                  path: ['selectionOrigin'],
+                  equals:
+                    result.selectionOrigin ??
+                    (this.provider.simulated ? 'mock' : 'llm'),
+                },
+              },
+            ],
             ...((selection.editorial as { options?: unknown } | null)?.options
               ? {
                   editorial: {
                     path: ['settingsKey'],
-                    equals: hash(
+                    equals: hash([
+                      selectionVersion,
                       (selection.editorial as { options: unknown }).options,
-                    ),
+                      this.config.provider,
+                      this.config.model,
+                    ]),
                   },
                 }
               : {}),
@@ -243,10 +343,24 @@ export class SelectionPipeline {
               description: `${candidate.description}\n\nFonte: ${task.source.url}\n${task.source.attribution}\nLicença: ${task.source.license}\nEvidência: ${task.source.evidenceUrl}`,
               selectionTaskId: selection.id,
               candidateId,
-              settingsKey: hash(
+              settingsKey: hash([
+                selectionVersion,
                 (selection.editorial as { options?: unknown } | null)
                   ?.options ?? {},
-              ),
+                this.config.provider,
+                this.config.model,
+              ]),
+              selectionOrigin:
+                result.selectionOrigin ??
+                (this.provider.simulated ? 'mock' : 'llm'),
+              selectionProvider: result.provider ?? this.provider.name,
+              selectionModel: result.model ?? this.config.model,
+              selectionWarnings: result.warnings ?? [],
+              reason:
+                candidate.reason ??
+                'Resultado legado sem justificativa registrada.',
+              score: candidate.score,
+              scores: candidate.scores,
               simulated:
                 (selection.result as { simulated?: boolean } | null)
                   ?.simulated ?? this.provider.simulated,

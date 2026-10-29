@@ -104,6 +104,8 @@ services:
       LLM_MIN_DURATION: ${LLM_MIN_DURATION:-5}
       LLM_MAX_DURATION: ${LLM_MAX_DURATION:-60}
       LLM_MIN_SCORE: ${LLM_MIN_SCORE:-4.5}
+      LLM_FALLBACK: ${LLM_FALLBACK:-none}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
     ports: ['127.0.0.1:3101:3001']
     depends_on:
       postgres: { condition: service_healthy }

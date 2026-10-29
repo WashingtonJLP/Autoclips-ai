@@ -272,11 +272,22 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
         });
       }
       const nextKey = `auto-transcribe-${result.sha256 && !editorial?.reprocess ? hash([result.sha256, editorial?.options ?? null, this.selection.config]) : task.id}`;
+      const reused = await this.production.findTranscript(
+        task.sourceId,
+        result.path,
+        editorial?.options?.language ?? 'auto',
+      );
       const next = await this.db.task.upsert({
         where: { renderKey: nextKey },
         create: {
           sourceId: task.sourceId,
           operation: 'transcribe',
+          ...(reused
+            ? {
+                status: 'COMPLETED',
+                result: reused.result as Prisma.InputJsonValue,
+              }
+            : {}),
           payload: {
             path: result.path,
             ...(editorial?.options?.language &&
@@ -296,7 +307,10 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           where: { id: task.id },
           data: { result: { ...result, reusedTaskId: next.id } },
         });
-      if (next.status === 'QUEUED')
+      if (
+        next.status === 'QUEUED' ||
+        (next.status === 'COMPLETED' && !next.continuationDone)
+      )
         await this.queue.add('transcribe', {}, { jobId: next.id });
     } else if (task.operation === 'transcribe') {
       const result = task.result as { segments?: unknown[] } | null;

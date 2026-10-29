@@ -245,10 +245,13 @@ test('blocos respeitam o limite, mantêm contexto e rejeitam transcrição grand
     end: id * 10 + 10,
     text: 'contexto '.repeat(20),
   }));
-  const limits = { ...config, maxInputTokens: 3000, maxChunks: 30 };
+  const limit = estimateInput(makeRequest([], config)) + 1800;
+  const limits = { ...config, maxInputTokens: limit, maxChunks: 30 };
   const chunks = chunksFor(segments, limits);
   assert.ok(chunks.length > 1);
-  assert.ok(chunks.every((s) => estimateInput(makeRequest(s, limits)) <= 3000));
+  assert.ok(
+    chunks.every((s) => estimateInput(makeRequest(s, limits)) <= limit),
+  );
   assert.ok(chunks[1][0].id <= chunks[0].at(-1)!.id);
   assert.throws(
     () => chunksFor(segments, { ...limits, maxChunks: 1 }),

@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { Candidate, Connectors, hash, normalizedUrl } from './connectors';
 import { parse, sourceSchema } from './contracts';
 import type { Pipeline } from './pipeline';
+import { UnavailableProvider } from './selection/provider';
+import { criteriaSchema, selectionPolicy } from './selection/contracts';
 
 export const productionOptions = z
   .object({
@@ -12,6 +14,9 @@ export const productionOptions = z
     minDuration: z.number().min(1).max(60).default(5),
     maxDuration: z.number().min(1).max(180).default(60),
     language: z.enum(['auto', 'pt', 'en', 'es']).default('auto'),
+    criteria: criteriaSchema.optional(),
+    minScore: z.number().min(0).max(10).optional(),
+    fallback: z.enum(['none', 'heuristic']).optional(),
   })
   .strict()
   .refine(
@@ -153,21 +158,41 @@ export class Production {
       where: { id: asset.id },
       data: { sourceId: source.id, rightsConfirmed: true },
     });
+    const effective = { ...this.p.selection.config, ...request.options };
+    const options = {
+      ...request.options,
+      criteria: effective.criteria,
+      minScore: effective.minScore,
+      fallback: effective.fallback,
+    };
     const key = hash([
-      'production-v1',
+      selectionPolicy(effective),
       asset.identity,
-      request.options,
-      this.p.selection.config.provider,
-      this.p.selection.config.model,
+      source.id,
+      options.language,
+      !(this.p.selection.provider instanceof UnavailableProvider),
       request.autoRun,
     ]);
     const renderKey = request.reprocess ? `${key}-${randomUUID()}` : key;
+    const reused = asset.path
+      ? await this.findTranscript(
+          source.id,
+          asset.path,
+          request.options.language,
+        )
+      : null;
     const task = await this.p.db.task.upsert({
       where: { renderKey },
       update: {},
       create: {
         sourceId: source.id,
         operation: asset.path ? 'transcribe' : 'download',
+        ...(reused
+          ? {
+              status: 'COMPLETED',
+              result: reused.result as Prisma.InputJsonValue,
+            }
+          : {}),
         renderKey,
         payload: asset.path
           ? {
@@ -184,16 +209,36 @@ export class Production {
                 : {}),
             },
         editorial: {
-          options: request.options,
+          options,
           assetId: asset.id,
           reprocess: request.reprocess,
+          ...(reused ? { reusedTranscriptionId: reused.id } : {}),
         },
         autoRun: request.autoRun,
       },
     });
-    if (task.status === 'QUEUED')
+    if (
+      task.status === 'QUEUED' ||
+      (task.status === 'COMPLETED' && task.autoRun && !task.continuationDone)
+    )
       await this.p.queue.add(task.operation, {}, { jobId: task.id });
     return task;
+  }
+  findTranscript(sourceId: string, path: string, language = 'auto') {
+    return this.p.db.task.findFirst({
+      where: {
+        sourceId,
+        operation: 'transcribe',
+        status: 'COMPLETED',
+        AND: [
+          { payload: { path: ['path'], equals: path } },
+          language === 'auto'
+            ? { payload: { equals: { path } } }
+            : { payload: { path: ['language'], equals: language } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
   async registerUpload(
     sourceId: string,

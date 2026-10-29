@@ -120,6 +120,10 @@ def transcribe(path: Path, language: str | None = None) -> dict:
         str(path), beam_size=1, vad_filter=True, word_timestamps=True, language=language
     )
     result = {
+        "transcription_engine": "faster-whisper",
+        "device": "cpu",
+        "compute_type": "int8",
+        "word_timestamps": True,
         "language": info.language,
         "duration": info.duration,
         "segments": [

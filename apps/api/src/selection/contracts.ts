@@ -52,21 +52,59 @@ export const transcriptSchema = z
 export type Transcript = z.infer<typeof transcriptSchema>;
 export type Segment = Transcript['segments'][number] & { id: number };
 const score = z.number().finite().min(0).max(10);
+export const criteriaSchema = z
+  .array(z.enum(['hook', 'value', 'humor', 'emotion', 'engagement']))
+  .min(1)
+  .max(5)
+  .refine((v) => new Set(v).size === v.length, 'Critérios repetidos');
+export const selectionVersion = 'semantic-v2';
 export const candidateSchema = z
   .object({
     first: z.number().int().min(0),
     last: z.number().int().min(0),
     title: z.string().trim().min(5).max(100),
     description: z.string().trim().min(10).max(600),
+    reason: z.string().trim().min(10).max(600).optional(),
     scores: z
-      .object({ hook: score, context: score, value: score, clarity: score })
+      .object({
+        hook: score,
+        context: score,
+        value: score,
+        clarity: score,
+        humor: score.optional(),
+        emotion: score.optional(),
+        engagement: score.optional(),
+      })
       .strict(),
   })
   .strict();
 export const outputSchema = z
   .object({ clips: z.array(candidateSchema).max(20) })
   .strict();
-export const responseFormat = z.toJSONSchema(outputSchema);
+// Contrato estrito enviado aos provedores reais; leitura de resultados antigos permanece compatível.
+export const semanticOutputSchema = z
+  .object({
+    clips: z
+      .array(
+        candidateSchema.extend({
+          reason: z.string().trim().min(10).max(600),
+          scores: z
+            .object({
+              hook: score,
+              context: score,
+              value: score,
+              clarity: score,
+              humor: score,
+              emotion: score,
+              engagement: score,
+            })
+            .strict(),
+        }),
+      )
+      .max(20),
+  })
+  .strict();
+export const responseFormat = z.toJSONSchema(semanticOutputSchema);
 export type Candidate = z.infer<typeof candidateSchema>;
 export type SelectedClip = Candidate & {
   id: string;
@@ -95,12 +133,31 @@ const configSchema = z
     minDuration: z.coerce.number().min(1).max(60).default(5),
     maxDuration: z.coerce.number().min(1).max(180).default(60),
     minScore: z.coerce.number().min(0).max(10).default(4.5),
+    criteria: criteriaSchema.default(['hook', 'value']),
+    fallback: z.enum(['none', 'heuristic']).default('none'),
+    maxRetries: integer(2, 0, 2),
   })
   .refine(
     (v) => v.minDuration <= v.maxDuration,
     'Intervalo de duração inválido',
   );
 export type SelectionConfig = z.infer<typeof configSchema>;
+export function selectionPolicy(config: SelectionConfig) {
+  return {
+    version: selectionVersion,
+    provider: config.provider,
+    model: config.model,
+    maxInputTokens: config.maxInputTokens,
+    maxOutputTokens: config.maxOutputTokens,
+    maxChunks: config.maxChunks,
+    maxClips: config.maxClips,
+    minDuration: config.minDuration,
+    maxDuration: config.maxDuration,
+    minScore: config.minScore,
+    criteria: config.criteria,
+    fallback: config.fallback,
+  };
+}
 export function readSelectionConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): SelectionConfig {
@@ -118,5 +175,7 @@ export function readSelectionConfig(
     minDuration: env.LLM_MIN_DURATION,
     maxDuration: env.LLM_MAX_DURATION,
     minScore: env.LLM_MIN_SCORE,
+    fallback: env.LLM_FALLBACK,
+    maxRetries: env.LLM_MAX_RETRIES,
   });
 }
