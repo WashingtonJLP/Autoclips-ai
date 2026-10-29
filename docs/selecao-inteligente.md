@@ -151,6 +151,9 @@ inferência Gemini. Os relatórios e os arquivos ficam em `artifacts/`, fora do 
   de transcrição foram verificados. Nenhuma chamada externa à IA ou publicação.
 - Build local e Docker, ESLint e Ruff executados. A configuração local original é
   restaurada após o teste de fallback; o teste usou override Docker sem chave.
+- O smoke anterior de upload, mídia importada, deduplicação e download também passou
+  após a restauração do ambiente. Ele continua sendo um teste com seleção mock,
+  identificado separadamente do teste heurístico e da validação Gemini pendente.
 - Inferência Gemini real e julgamento semântico de um vídeo por Gemini: **pendentes**.
   Não foram medidas precisão editorial, engajamento ou cotas reais do projeto Google.
 
