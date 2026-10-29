@@ -30,6 +30,12 @@ export type Task = {
     description: string;
     candidateId?: string;
     simulated?: boolean;
+    selectionOrigin?: string;
+    selectionProvider?: string;
+    selectionModel?: string;
+    selectionWarnings?: string[];
+    reason?: string;
+    score?: number;
   } | null;
   autoRun?: boolean;
   continuationDone?: boolean;

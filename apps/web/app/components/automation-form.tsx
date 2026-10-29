@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { api, useAction, useResources } from '../shared/api';
 import { Feedback } from './ui';
+import SelectionCriteria from './selection-criteria';
 type Automation = {
   id: string;
   name: string;
@@ -52,12 +53,19 @@ export default function AutomationForm() {
         : {}),
       options: {
         maxClips: Number(form.get('maxClips')),
-        minDuration: 5,
-        maxDuration: 60,
+        minDuration: Number(form.get('clipMinDuration')),
+        maxDuration: Number(form.get('clipMaxDuration')),
         language: 'auto',
+        criteria: form.getAll('criteria'),
+        ...(form.get('minScore')
+          ? { minScore: Number(form.get('minScore')) }
+          : {}),
+        ...(form.get('fallback') ? { fallback: form.get('fallback') } : {}),
       },
     };
     await action.run(async () => {
+      if (!form.getAll('criteria').length)
+        throw new Error('Selecione pelo menos um critério de seleção.');
       if (form.get('save') === 'on') {
         await api('automations', {
           name: form.get('name'),
@@ -166,6 +174,28 @@ export default function AutomationForm() {
             />
           </label>
           <label>
+            Duração mínima do corte (s)
+            <input
+              name="clipMinDuration"
+              type="number"
+              min="1"
+              max="60"
+              defaultValue="5"
+              required
+            />
+          </label>
+          <label>
+            Duração máxima do corte (s)
+            <input
+              name="clipMaxDuration"
+              type="number"
+              min="1"
+              max="180"
+              defaultValue="60"
+              required
+            />
+          </label>
+          <label>
             Publicado nos últimos dias
             <input name="recentDays" type="number" min="1" max="365" />
           </label>
@@ -181,6 +211,7 @@ export default function AutomationForm() {
             />
           </label>
         </div>
+        <SelectionCriteria />
         <div className="row">
           {[
             ['youtube', 'YouTube'],

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { api, useAction } from '../shared/api';
 import { Source, Task } from '../shared/models';
 import { Feedback } from './ui';
+import SelectionCriteria from './selection-criteria';
 
 type Asset = {
   id: string;
@@ -37,7 +38,25 @@ export default function ProductionForm({
     [selected, setSelected] = useState(initialAsset ?? ''),
     [inspected, setInspected] = useState<Asset | null>(null),
     [manual, setManual] = useState(false),
+    [llm, setLlm] = useState<{
+      provider: string;
+      model: string;
+      simulated: boolean;
+      available?: boolean;
+    } | null>(null),
     action = useAction();
+  useEffect(() => {
+    const controller = new AbortController();
+    void api<{
+      provider: string;
+      model: string;
+      simulated: boolean;
+      available?: boolean;
+    }>('llm/config', undefined, controller.signal)
+      .then(setLlm)
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     if (!initialAsset) return;
     const controller = new AbortController();
@@ -54,6 +73,8 @@ export default function ProductionForm({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const task = await action.run(async () => {
+      if (mode !== 'advanced' && !form.getAll('criteria').length)
+        throw new Error('Selecione pelo menos um critério de seleção.');
       let asset: Asset;
       if (mode === 'link') {
         asset = await api<Asset>('media/inspect', {
@@ -116,9 +137,14 @@ export default function ProductionForm({
           : {}),
         options: {
           maxClips: Number(form.get('maxClips')),
-          minDuration: 5,
+          minDuration: Number(form.get('clipMinDuration')),
           maxDuration: Number(form.get('maxDuration')),
           language: form.get('language'),
+          criteria: form.getAll('criteria'),
+          ...(form.get('minScore')
+            ? { minScore: Number(form.get('minScore')) }
+            : {}),
+          ...(form.get('fallback') ? { fallback: form.get('fallback') } : {}),
         },
       });
     }, 'Produção localizada ou iniciada. Resultados existentes são reutilizados; acompanhe as etapas.');
@@ -278,7 +304,28 @@ export default function ProductionForm({
       </section>
       <section className="form-section">
         <h2>3. Preferências dos cortes</h2>
+        {llm && (
+          <p className="notice">
+            Seleção: {llm.provider} · {llm.model}.{' '}
+            {llm.simulated
+              ? 'Mock de teste: não há análise semântica real.'
+              : llm.available === false
+                ? 'IA não configurada. Configure o provedor ou autorize fallback explícito.'
+                : 'Análise por IA, sujeita a revisão editorial.'}
+          </p>
+        )}
         <div className="form-grid">
+          <label>
+            Duração mínima (segundos)
+            <input
+              name="clipMinDuration"
+              type="number"
+              min="1"
+              max="60"
+              defaultValue="5"
+              required
+            />
+          </label>
           <label>
             Quantidade
             <input
@@ -309,6 +356,7 @@ export default function ProductionForm({
             </select>
           </label>
         </div>
+        <SelectionCriteria />
         <label className="check-label">
           <input name="autoRun" type="checkbox" defaultChecked />
           Concluir automaticamente com títulos, cortes e legendas

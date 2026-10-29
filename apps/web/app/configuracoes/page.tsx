@@ -29,7 +29,11 @@ export default function Settings() {
                 <span
                   className={`badge ${settings.simulated ? 'warning' : 'success'}`}
                 >
-                  {settings.simulated ? 'Modo mock' : 'Provedor real'}
+                  {settings.simulated
+                    ? 'Modo mock'
+                    : settings.available === false
+                      ? 'IA não configurada'
+                      : 'Provedor real'}
                 </span>
               )}
             </div>
@@ -42,6 +46,12 @@ export default function Settings() {
               <dd>{settings?.provider ?? '—'}</dd>
               <dt>Modelo</dt>
               <dd>{settings?.model ?? '—'}</dd>
+              <dt>Fallback configurado</dt>
+              <dd>
+                {settings?.fallback === 'heuristic'
+                  ? 'Heurística local identificada'
+                  : 'Interromper sem simular IA'}
+              </dd>
               <dt>Orçamento diário</dt>
               <dd>
                 {settings
@@ -55,6 +65,12 @@ export default function Settings() {
                   : '—'}
               </dd>
             </dl>
+            <p className="muted small">
+              Gemini real exige GEMINI_API_KEY, modelo explícito e
+              LLM_ALLOW_EXTERNAL=true no servidor. Confirme o nível gratuito do
+              projeto ou configure autorização, preços e orçamento. A chave não
+              é enviada pelo navegador.
+            </p>
             <Advanced
               value={settings ?? {}}
               title="Limites de tokens e consumo detalhado"

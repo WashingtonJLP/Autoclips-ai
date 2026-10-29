@@ -62,3 +62,24 @@ test('dashboard distingue consumo zero informado de ausência de dados e mostra 
   assert.ok(html.includes('0.000000 USD'));
   assert.ok(html.includes('Nenhum trecho passou'));
 });
+test('fallback fica identificado fora dos detalhes e justificativa é escapada', () => {
+  const html = renderToStaticMarkup(
+    <SelectionResults
+      result={{
+        ...result,
+        simulated: false,
+        selectionOrigin: 'heuristic',
+        warnings: ['Gemini sem credencial'],
+        clips: [{ ...result.clips[0], reason: 'Heurística <script> não é IA' }],
+      }}
+      busy={false}
+      onRender={() => {}}
+    />,
+  );
+  assert.ok(html.includes('Heurística local'));
+  assert.ok(html.includes('não houve análise semântica'));
+  assert.ok(html.includes('Gemini sem credencial'));
+  assert.ok(html.includes('Por que foi escolhido'));
+  assert.ok(!html.includes('Sugestões de LLM'));
+  assert.ok(!html.includes('<script> não é IA'));
+});

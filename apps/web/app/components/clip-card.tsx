@@ -25,6 +25,12 @@ export default function ClipCard({
             {title(task)}
           </button>
         </h3>
+        {task.editorial?.selectionOrigin === 'heuristic' && (
+          <span className="badge">Heurística local · revisar</span>
+        )}
+        {task.editorial?.selectionOrigin === 'llm' && (
+          <span className="badge">IA · {task.editorial.selectionProvider}</span>
+        )}
         {task.editorial?.simulated && (
           <span className="badge">Seleção de teste (mock)</span>
         )}

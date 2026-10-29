@@ -19,7 +19,19 @@ export async function api<T>(
     throw new Error(
       typeof data.message === 'string'
         ? data.message
-        : 'Confira os campos e tente novamente.',
+        : Array.isArray(data.message)
+          ? data.message
+              .map((issue: unknown) =>
+                typeof issue === 'string'
+                  ? issue
+                  : issue && typeof issue === 'object' && 'message' in issue
+                    ? String(issue.message)
+                    : '',
+              )
+              .filter(Boolean)
+              .slice(0, 3)
+              .join('; ') || 'Confira os campos e tente novamente.'
+          : 'Confira os campos e tente novamente.',
     );
   return data as T;
 }

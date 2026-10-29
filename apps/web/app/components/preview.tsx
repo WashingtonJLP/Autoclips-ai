@@ -54,6 +54,24 @@ export default function Preview({
         <div className="preview-details">
           <span className="eyebrow">PRONTO PARA REVISÃO</span>
           <h3>{title(task)}</h3>
+          {task.editorial?.selectionOrigin === 'heuristic' && (
+            <p className="notice">
+              Heurística local: sem análise semântica por IA.
+            </p>
+          )}
+          {task.editorial?.selectionProvider && (
+            <p>
+              Seleção: {task.editorial.selectionProvider} ·{' '}
+              {task.editorial.selectionModel} · Nota:{' '}
+              {task.editorial.score?.toFixed(2) ?? '—'}/10
+            </p>
+          )}
+          {task.editorial?.reason && <p>{task.editorial.reason}</p>}
+          {task.editorial?.selectionWarnings?.map((w) => (
+            <p className="notice" key={w}>
+              {w}
+            </p>
+          ))}
           {task.editorial?.simulated && (
             <p className="notice">
               Seleção simulada para teste; não é análise semântica real.

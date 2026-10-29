@@ -8,8 +8,17 @@ type Clip = {
   end: number;
   score: number;
   classification: string;
-  scores: { hook: number; context: number; value: number; clarity: number };
+  scores: {
+    hook: number;
+    context: number;
+    value: number;
+    clarity: number;
+    humor?: number;
+    emotion?: number;
+    engagement?: number;
+  };
   excerpt: string;
+  reason?: string;
 };
 type Consumption = {
   usage: {
@@ -40,13 +49,29 @@ export default function SelectionResults({
     cost = total('costMicros');
   return (
     <section aria-label="Trechos selecionados" className="mt-5 space-y-4">
+      {result.selectionOrigin === 'heuristic' && (
+        <p className="notice">
+          Heurística local: não houve análise semântica por IA. Revisão
+          necessária.
+        </p>
+      )}
+      {Array.isArray(result.warnings) &&
+        result.warnings.map((w, i) => (
+          <p role="status" key={i}>
+            {String(w)}
+          </p>
+        ))}
       <details className="advanced">
         <summary>Informações de IA e consumo</summary>
         <p className="text-sm text-slate-400">
           {String(result.provider)} · {String(result.model)} ·{' '}
-          {result.simulated
-            ? 'Simulação heurística — sem avaliação por LLM real'
-            : 'Sugestões de LLM — revisão editorial obrigatória'}
+          {result.selectionOrigin === 'none'
+            ? 'Nenhuma análise executada'
+            : result.selectionOrigin === 'heuristic'
+              ? 'Heurística local — sem LLM real'
+              : result.simulated
+                ? 'Simulação heurística — sem avaliação por LLM real'
+                : 'Sugestões de LLM — revisão editorial obrigatória'}
         </p>
         <p className="text-xs text-slate-500">
           Tokens informados: entrada {input ?? 'não informada'}, saída{' '}
@@ -74,6 +99,9 @@ export default function SelectionResults({
             </span>
           </div>
           <p className="mt-3 text-sm text-slate-300">{clip.description}</p>
+          {clip.reason && (
+            <p className="mt-3 text-sm">Por que foi escolhido: {clip.reason}</p>
+          )}
           <p className="mt-3 text-sm text-slate-400">
             {clip.start.toFixed(2)}s → {clip.end.toFixed(2)}s ·{' '}
             {(clip.end - clip.start).toFixed(2)} segundos
@@ -87,13 +115,18 @@ export default function SelectionResults({
                   ['Contexto', clip.scores.context],
                   ['Valor', clip.scores.value],
                   ['Clareza', clip.scores.clarity],
+                  ['Humor', clip.scores.humor],
+                  ['Emoção', clip.scores.emotion],
+                  ['Engajamento', clip.scores.engagement],
                 ] as const
-              ).map(([label, score]) => (
-                <div key={label}>
-                  <dt className="text-slate-500">{label}</dt>
-                  <dd className="mt-1">{score}/10</dd>
-                </div>
-              ))}
+              )
+                .filter(([, score]) => typeof score === 'number')
+                .map(([label, score]) => (
+                  <div key={label}>
+                    <dt className="text-slate-500">{label}</dt>
+                    <dd className="mt-1">{score}/10</dd>
+                  </div>
+                ))}
             </dl>
           </details>
           <details className="mt-4 text-sm">
