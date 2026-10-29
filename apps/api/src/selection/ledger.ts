@@ -53,6 +53,16 @@ export class PrismaUsageLedger implements UsageLedger {
         create: { day },
         update: {},
       });
+      // Conta reservas, inclusive tentativas falhas/ambíguas. Cache é retornado antes
+      // desta verificação. A transação serializável impede ultrapassar o limite por corrida.
+      if (
+        r.provider === 'gemini' &&
+        (await tx.llmCall.count({ where: { day, provider: 'gemini' } })) >=
+          config.geminiDailyRequestLimit
+      )
+        throw new SelectionError(
+          'Limite diário de requisições Gemini atingido; nenhuma chamada enviada',
+        );
       const tokens = BigInt(r.inputTokens + r.outputTokens),
         cost = BigInt(r.costMicros);
       if (
@@ -138,6 +148,9 @@ export class PrismaUsageLedger implements UsageLedger {
       day: this.day(),
       committedTokens: (budget?.tokens ?? 0n).toString(),
       committedCostMicros: (budget?.costMicros ?? 0n).toString(),
+      geminiRequestsReserved: await this.db.llmCall.count({
+        where: { day: this.day(), provider: 'gemini' },
+      }),
     };
   }
 }

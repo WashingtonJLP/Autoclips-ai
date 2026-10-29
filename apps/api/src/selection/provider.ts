@@ -45,8 +45,11 @@ export class LlmHttpError extends LlmUnavailableError {
   constructor(
     readonly status: number,
     readonly retryAfterMs = 0,
+    detail?: string,
   ) {
-    super(`API de IA recusou a solicitação (${status})`);
+    super(
+      `API de IA recusou a solicitação (${status})${detail ? `: ${detail}` : ''}`,
+    );
   }
   get retryable() {
     return [429, 500, 502, 503, 504].includes(this.status);
@@ -322,10 +325,21 @@ export class GeminiProvider implements LlmProvider {
         retry && !Number.isFinite(seconds)
           ? Math.max(0, Date.parse(retry) - Date.now())
           : seconds * 1000;
-      await response.body?.cancel();
+      let detail: string | undefined;
+      try {
+        const error = JSON.parse(await boundedResponse(response));
+        if (typeof error.error?.message === 'string')
+          detail = error.error.message
+            .split(this.env.GEMINI_API_KEY!)
+            .join('[chave oculta]')
+            .slice(0, 500);
+      } catch {
+        /* O status continua disponível mesmo sem corpo JSON válido. */
+      }
       throw new LlmHttpError(
         response.status,
         Number.isFinite(delay) ? Math.min(30000, delay) : 0,
+        detail,
       );
     }
     const raw = await boundedResponse(response);

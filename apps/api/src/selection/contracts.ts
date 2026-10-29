@@ -136,6 +136,7 @@ const configSchema = z
     criteria: criteriaSchema.default(['hook', 'value']),
     fallback: z.enum(['none', 'heuristic']).default('none'),
     maxRetries: integer(2, 0, 2),
+    geminiDailyRequestLimit: integer(10, 0, 20),
   })
   .refine(
     (v) => v.minDuration <= v.maxDuration,
@@ -177,5 +178,6 @@ export function readSelectionConfig(
     minScore: env.LLM_MIN_SCORE,
     fallback: env.LLM_FALLBACK,
     maxRetries: env.LLM_MAX_RETRIES,
+    geminiDailyRequestLimit: env.GEMINI_DAILY_REQUEST_LIMIT,
   });
 }
