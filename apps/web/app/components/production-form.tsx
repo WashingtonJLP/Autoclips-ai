@@ -5,7 +5,7 @@ import { Task } from '../shared/models';
 import { Feedback } from './ui';
 import SelectionCriteria from './selection-criteria';
 
-type Asset = {
+export type Asset = {
   id: string;
   title: string;
   platform: string;
@@ -16,7 +16,73 @@ type Asset = {
   duration?: number;
   reason?: string;
   testContent?: boolean;
+  thumbnailUrl?: string;
+  availability?: { kind: string; message: string };
 };
+
+export function MediaAnalysis({
+  asset,
+  onUpload,
+}: {
+  asset: Asset;
+  onUpload: () => void;
+}) {
+  const blocked =
+    asset.availability?.kind === 'upload_required' ||
+    (!asset.path && !asset.accessible);
+  return (
+    <article className="notice" aria-label="Análise do vídeo">
+      {asset.thumbnailUrl && (
+        <img
+          src={asset.thumbnailUrl}
+          alt={`Miniatura de ${asset.title}`}
+          width={240}
+          height={135}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          style={{ objectFit: 'cover', maxWidth: '100%', borderRadius: 8 }}
+        />
+      )}
+      <h3>{asset.title}</h3>
+      <p>
+        {(
+          {
+            youtube: 'YouTube',
+            twitch: 'Twitch',
+            vimeo: 'Vimeo',
+            direct: 'Arquivo direto',
+            commons: 'Wikimedia Commons',
+            upload: 'Arquivo enviado',
+          } as Record<string, string>
+        )[asset.platform] ?? asset.platform}
+        {asset.author ? ` · ${asset.author}` : ''}
+      </p>
+      <p>
+        {asset.duration
+          ? `Duração: ${Math.floor(Math.round(asset.duration) / 60)}:${String(Math.round(asset.duration) % 60).padStart(2, '0')}`
+          : 'Duração ainda não informada'}
+      </p>
+      <strong>
+        {asset.path
+          ? 'Arquivo já importado'
+          : blocked
+            ? 'Apenas metadados · envio do original necessário'
+            : 'Importação disponível'}
+      </strong>
+      <p role="status">
+        {asset.availability?.message ??
+          (asset.path
+            ? 'Vamos reutilizar o arquivo já importado.'
+            : asset.reason)}
+      </p>
+      {blocked && (
+        <button className="button primary" type="button" onClick={onUpload}>
+          Enviar o original autorizado
+        </button>
+      )}
+    </article>
+  );
+}
 type Request = {
   assetId: string;
   autoRun: boolean;
@@ -31,6 +97,7 @@ export default function ProductionForm({
   initialAsset?: string;
 }) {
   const [mode, setMode] = useState(initialAsset ? 'imported' : 'link');
+  const [link, setLink] = useState('');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selected, setSelected] = useState(initialAsset ?? '');
   const [filter, setFilter] = useState('');
@@ -43,6 +110,11 @@ export default function ProductionForm({
     simulated: boolean;
   } | null>(null);
   const action = useAction();
+  async function analyze() {
+    setPending(null);
+    const asset = await api<Asset>('media/inspect', { url: link.trim() });
+    setInspected(asset);
+  }
   useEffect(() => {
     const controller = new AbortController();
     void api<Asset[]>('media', undefined, controller.signal)
@@ -82,64 +154,72 @@ export default function ProductionForm({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setPending(null);
-    await action.run(async () => {
-      let asset: Asset;
-      if (mode === 'link')
-        asset = await api<Asset>('media/inspect', {
-          url: String(form.get('url')).trim(),
+    await action.run(
+      async () => {
+        if (mode === 'link' && !inspected) {
+          await analyze();
+          return;
+        }
+        let asset: Asset;
+        if (mode === 'link') asset = inspected!;
+        else if (mode === 'upload') {
+          const file = form.get('file') as File;
+          const extension = file?.name.split('.').at(-1)?.toLowerCase();
+          if (!file?.size || file.size > 512 * 1024 ** 2)
+            throw new Error('Escolha um vídeo de até 512 MB.');
+          if (!['mp4', 'webm', 'mov'].includes(extension ?? ''))
+            throw new Error('Escolha um arquivo MP4, WebM ou MOV.');
+          const query = new URLSearchParams({
+            extension: extension!,
+            name: file.name,
+            testContent: String(form.get('testContent') === 'on'),
+          });
+          const response = await fetch(`/api/backend/media/upload?${query}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
+          });
+          const result = await response.json();
+          if (!response.ok)
+            throw new Error(
+              result.message ?? 'Não foi possível enviar o vídeo.',
+            );
+          asset = result;
+          setAssets((items) => [
+            asset,
+            ...items.filter((a) => a.id !== asset.id),
+          ]);
+          setSelected(asset.id);
+        } else {
+          const found = assets.find((a) => a.id === selected);
+          if (!found) throw new Error('Selecione um vídeo da lista.');
+          asset = found;
+        }
+        setInspected(asset);
+        const criteria = form.getAll('criteria');
+        if (!criteria.length)
+          throw new Error('Escolha pelo menos um critério de seleção.');
+        await start(asset, {
+          assetId: asset.id,
+          autoRun: true,
+          reprocess: form.get('reprocess') === 'on',
+          options: {
+            maxClips: Number(form.get('maxClips')),
+            minDuration: Number(form.get('minDuration')),
+            maxDuration: Number(form.get('maxDuration')),
+            language: form.get('language'),
+            criteria,
+            ...(form.get('minScore')
+              ? { minScore: Number(form.get('minScore')) }
+              : {}),
+            ...(form.get('fallback') ? { fallback: form.get('fallback') } : {}),
+          },
         });
-      else if (mode === 'upload') {
-        const file = form.get('file') as File;
-        const extension = file?.name.split('.').at(-1)?.toLowerCase();
-        if (!file?.size || file.size > 512 * 1024 ** 2)
-          throw new Error('Escolha um vídeo de até 512 MB.');
-        if (!['mp4', 'webm', 'mov'].includes(extension ?? ''))
-          throw new Error('Escolha um arquivo MP4, WebM ou MOV.');
-        const query = new URLSearchParams({
-          extension: extension!,
-          name: file.name,
-          testContent: String(form.get('testContent') === 'on'),
-        });
-        const response = await fetch(`/api/backend/media/upload?${query}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: file,
-        });
-        const result = await response.json();
-        if (!response.ok)
-          throw new Error(result.message ?? 'Não foi possível enviar o vídeo.');
-        asset = result;
-        setAssets((items) => [
-          asset,
-          ...items.filter((a) => a.id !== asset.id),
-        ]);
-        setSelected(asset.id);
-      } else {
-        const found = assets.find((a) => a.id === selected);
-        if (!found) throw new Error('Selecione um vídeo da lista.');
-        asset = found;
-      }
-      setInspected(asset);
-      const criteria = form.getAll('criteria');
-      if (!criteria.length)
-        throw new Error('Escolha pelo menos um critério de seleção.');
-      await start(asset, {
-        assetId: asset.id,
-        autoRun: true,
-        reprocess: form.get('reprocess') === 'on',
-        options: {
-          maxClips: Number(form.get('maxClips')),
-          minDuration: Number(form.get('minDuration')),
-          maxDuration: Number(form.get('maxDuration')),
-          language: form.get('language'),
-          criteria,
-          ...(form.get('minScore')
-            ? { minScore: Number(form.get('minScore')) }
-            : {}),
-          ...(form.get('fallback') ? { fallback: form.get('fallback') } : {}),
-        },
-      });
-    }, 'Mídia conferida. Acompanhe a produção ou confirme a autorização abaixo.');
+      },
+      mode === 'link' && !inspected
+        ? 'Análise concluída. Confira os dados e a disponibilidade abaixo.'
+        : 'Mídia conferida. Acompanhe a produção ou confirme a autorização abaixo.',
+    );
   }
   return (
     <form
@@ -162,6 +242,7 @@ export default function ProductionForm({
               key={value}
               type="button"
               aria-pressed={mode === value}
+              disabled={action.busy}
               className={`button ${mode === value ? 'primary' : ''}`}
               onClick={() => {
                 setMode(value);
@@ -174,25 +255,56 @@ export default function ProductionForm({
           ))}
         </div>
         {mode === 'link' && (
-          <label>
-            Link do vídeo
-            <input
-              name="url"
-              type="url"
-              required
-              placeholder="https://…"
-              maxLength={2000}
-            />
-            <small>
-              YouTube, Twitch, Vimeo ou arquivo direto. Quando o original não
-              estiver disponível, você poderá enviá-lo.
-            </small>
-          </label>
+          <div>
+            <label>
+              Link do vídeo
+              <input
+                name="url"
+                type="url"
+                required
+                placeholder="https://…"
+                maxLength={2000}
+                value={link}
+                disabled={action.busy}
+                onChange={(e) => {
+                  setLink(e.target.value);
+                  setInspected(null);
+                  setPending(null);
+                }}
+              />
+              <small>
+                Cole o link para conferir os dados e saber se podemos importar o
+                vídeo.
+              </small>
+            </label>
+            <button
+              className={`button ${inspected ? 'secondary' : 'primary'}`}
+              disabled={action.busy}
+              type={inspected ? 'button' : 'submit'}
+              onClick={
+                inspected
+                  ? () => void action.run(analyze, 'Análise atualizada.')
+                  : undefined
+              }
+            >
+              {action.busy
+                ? 'Analisando…'
+                : inspected
+                  ? 'Analisar novamente'
+                  : 'Analisar vídeo'}
+            </button>
+          </div>
         )}
         {mode === 'upload' && (
           <label>
             Arquivo original
-            <input name="file" type="file" required accept=".mp4,.webm,.mov" />
+            <input
+              name="file"
+              type="file"
+              required
+              accept=".mp4,.webm,.mov"
+              disabled={action.busy}
+            />
             <small>MP4, WebM ou MOV, até 512 MB e duas horas.</small>
           </label>
         )}
@@ -252,23 +364,14 @@ export default function ProductionForm({
           </>
         )}
         {inspected && (
-          <p role="status">
-            <strong>{inspected.title}</strong> · {inspected.platform}
-            {inspected.author ? ` · ${inspected.author}` : ''}
-            {inspected.duration ? ` · ${Math.round(inspected.duration)} s` : ''}
-          </p>
-        )}
-        {inspected && !inspected.path && !inspected.accessible && (
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => {
+          <MediaAnalysis
+            asset={inspected}
+            onUpload={() => {
               setMode('upload');
               setPending(null);
+              setInspected(null);
             }}
-          >
-            Enviar o original autorizado
-          </button>
+          />
         )}
       </section>
       <section className="form-section">
@@ -343,9 +446,19 @@ export default function ProductionForm({
           a IA estiver indisponível, usaremos heurística local identificada, sem
           análise semântica. Você pode alterar essa opção acima.
         </p>
-        <button className="button primary" type="submit" disabled={action.busy}>
-          {action.busy ? 'Preparando vídeo…' : 'Gerar cortes'}
-        </button>
+        {(mode !== 'link' || inspected) && (
+          <button
+            className="button primary"
+            type="submit"
+            disabled={
+              action.busy ||
+              (mode === 'link' &&
+                inspected?.availability?.kind === 'upload_required')
+            }
+          >
+            {action.busy ? 'Preparando vídeo…' : 'Gerar cortes'}
+          </button>
+        )}
       </section>
       {pending && (
         <section

@@ -151,6 +151,9 @@ const youtube = await api('media/inspect', {
 });
 assert.equal(youtube.platform, 'youtube');
 assert.equal(youtube.accessible, false);
+assert.equal(youtube.availability.kind, 'upload_required');
+assert.ok(youtube.thumbnailUrl?.startsWith('https://i.ytimg.com/'));
+assert.ok(!/API_KEY|cadastre|fonte/i.test(youtube.availability.message));
 assert.equal(
   (
     await api(
@@ -161,12 +164,12 @@ assert.equal(
   ).code,
   'ORIGINAL_REQUIRED',
 );
-const twitch = await api(
-  'media/inspect',
-  { url: 'https://www.twitch.tv/videos/123456789' },
-  400,
-);
-assert.match(twitch.message, /TWITCH_CLIENT_ID/);
+const twitch = await api('media/inspect', {
+  url: 'https://www.twitch.tv/videos/123456789',
+});
+assert.equal(twitch.platform, 'twitch');
+assert.equal(twitch.availability.kind, 'upload_required');
+assert.match(twitch.availability.message, /conexão.*não está configurada/);
 const vimeo = await api('media/inspect', { url: 'https://vimeo.com/76979871' });
 assert.equal(vimeo.platform, 'vimeo');
 assert.equal(vimeo.accessible, false);
@@ -184,6 +187,9 @@ const directRoot = await api('productions', {
 });
 const directProduction = await completed(directRoot.id);
 assert.ok(directProduction.steps.some((s) => s.operation === 'download'));
+const importedLink = await api('media/inspect', { url: directUrl.href });
+assert.equal(importedLink.id, direct.id);
+assert.equal(importedLink.availability.kind, 'imported');
 assert.deepEqual(
   (await api('sources')).map((s) => s.id).sort(),
   sourcesBefore,
@@ -212,7 +218,7 @@ const report = {
   otherProductionPreserved: true,
   syntheticSeparated: true,
   youtube: { title: youtube.title, download: false },
-  twitch: { error: twitch.message },
+  twitch: { limitation: twitch.availability.message },
   vimeo: { title: vimeo.title, download: false },
   paidCalls: 0,
   publications: 0,

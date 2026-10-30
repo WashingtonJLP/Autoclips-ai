@@ -303,6 +303,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           where: { id: editorial.assetId },
           data: {
             path: existing?.path ?? result.path,
+            duration: existing?.duration ?? undefined,
             ...(existing ? {} : { sha256: result.sha256 }),
             accessible: true,
           },
@@ -351,7 +352,17 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
       )
         await this.queue.add('transcribe', {}, { jobId: next.id });
     } else if (task.operation === 'transcribe') {
-      const result = task.result as { segments?: unknown[] } | null;
+      const result = task.result as {
+        segments?: unknown[];
+        duration?: number;
+        language?: string;
+      } | null;
+      const assetId = (task.editorial as { assetId?: string } | null)?.assetId;
+      if (assetId && result?.duration && Number.isFinite(result.duration))
+        await this.db.mediaAsset.update({
+          where: { id: assetId },
+          data: { duration: result.duration, language: result.language },
+        });
       if (Array.isArray(result?.segments) && !result.segments.length) {
         await this.db.task.update({
           where: { id: task.id },

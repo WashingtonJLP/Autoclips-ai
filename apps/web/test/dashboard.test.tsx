@@ -15,6 +15,7 @@ import { Pagination, Feedback, Advanced } from '../app/components/ui';
 import ProductionForm from '../app/components/production-form';
 import SourceForm from '../app/components/source-form';
 import LibraryView from '../app/biblioteca/view';
+import { MediaAnalysis } from '../app/components/production-form';
 
 const task: Task = {
   id: 'interno',
@@ -100,7 +101,7 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   assert.equal(matchesTask(task, [source], 'não existe'), false);
   for (const field of [
     'name="url"',
-    'Gerar cortes',
+    'Analisar vídeo',
     'Colar link',
     'Escolher vídeo',
     'Enviar arquivo',
@@ -125,6 +126,52 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   );
   assert.ok(
     notice.includes('role="alert"') && notice.includes('role="status"'),
+  );
+});
+
+test('análise distingue metadados de importação e oferece original sem formulário técnico', () => {
+  const base = {
+    id: 'video',
+    title: 'Vídeo <script>',
+    platform: 'youtube',
+    author: 'Canal',
+    duration: 125,
+    accessible: false,
+    rightsConfirmed: false,
+    thumbnailUrl: 'https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg',
+    availability: {
+      kind: 'upload_required',
+      message: 'Envie o original autorizado.',
+    },
+  };
+  const blocked = renderToStaticMarkup(
+    <MediaAnalysis asset={base} onUpload={() => {}} />,
+  );
+  for (const text of [
+    'Apenas metadados',
+    'YouTube',
+    'Canal',
+    '2:05',
+    'Miniatura',
+    'Enviar o original autorizado',
+  ])
+    assert.ok(blocked.includes(text));
+  assert.ok(
+    blocked.includes('&lt;script&gt;') && !blocked.includes('<script>'),
+  );
+  const imported = renderToStaticMarkup(
+    <MediaAnalysis
+      asset={{
+        ...base,
+        path: 'uploads/local.mp4',
+        availability: { kind: 'imported', message: 'Sem novo download.' },
+      }}
+      onUpload={() => {}}
+    />,
+  );
+  assert.ok(
+    imported.includes('Arquivo já importado') &&
+      !imported.includes('Enviar o original autorizado'),
   );
 });
 

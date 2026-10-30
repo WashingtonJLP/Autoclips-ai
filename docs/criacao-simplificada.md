@@ -4,7 +4,10 @@
 
 1. Abra `http://localhost:3100/criar` e escolha **Colar link**, **Enviar arquivo** ou
    **Escolher vídeo**. Upload aceita MP4/WebM/MOV; vídeos importados podem ser pesquisados.
-2. Clique **Gerar cortes**. Permissões existentes e licenças de catálogo são reutilizadas.
+2. Para links, clique **Analisar vídeo**: confira plataforma, título, canal, duração e
+   miniatura quando disponíveis. A análise separa metadados de acesso ao original;
+   arquivos já importados são reconhecidos antes de consultar a plataforma novamente.
+   Depois clique **Gerar cortes**. Permissões existentes e licenças de catálogo são reutilizadas.
    Se faltar autorização, confirme **Tenho autorização — gerar cortes** somente se possuir
    direitos para o uso pretendido. Essa declaração se aplica apenas à mídia selecionada.
 3. Acompanhe as etapas automaticamente e clique **Ver resultado**. Na **Biblioteca**,
@@ -16,6 +19,13 @@ cadastrada sem afirmar direitos comerciais. Permissões específicas ficam regis
 internamente com origem, data e método, fora da lista de fontes monitoradas.
 Uma declaração do operador não é verificação jurídica automática nem autorização para
 extrair originais por meios não permitidos.
+
+Quando somente os metadados estiverem disponíveis, **Gerar cortes** fica bloqueado e
+o cartão oferece **Enviar o original autorizado**, com uma explicação curta. Não se
+pedem cadastro de fonte, caminhos ou chaves de API na experiência principal. Twitch
+sem conexão configurada ainda é identificada; seus metadados completos não são inventados.
+YouTube sem chave oficial pode fornecer título, canal e miniatura via oEmbed, mas não
+duração. Quando o backend obtém a duração na transcrição, ela fica salva para reutilização.
 
 O formulário informa e seleciona heurística local para indisponibilidade da IA. É possível
 alterar isso em **Critérios da seleção e fallback**. Resultados heurísticos e mock são
@@ -60,13 +70,18 @@ cookies nem tokens de plataformas. Outros conectores continuam com suas polític
 
 ## Verificação executada
 
-- **56 testes API**, **8 testes React**, ESLint, builds completos API/Next.js e Docker
+- **61 testes API**, **9 testes React**, ESLint, builds completos API/Next.js e Docker
   aprovados. Python: **14 aprovados, 1 ignorado** por privilégio de symlink no Windows;
   Ruff aprovado. Nenhum teste foi desabilitado para aprovar a mudança.
 - `scripts/creation-library-smoke.mjs`: upload binário de mídia própria sintética nova,
   confirmação uma vez, produção por asset, Whisper real CPU/INT8, seleção mock, FFmpeg real,
   legendas, download e decodificação integral de MP4. Também testou link direto HTTPS
   de vídeo CC0, YouTube online, Vimeo online e bloqueio Twitch por falta de credenciais.
+- A análise online YouTube retornou título/canal/miniatura e `upload_required`, com
+  explicação sem nomes de variáveis de configuração. Twitch sem credenciais retornou
+  análise identificada com a alternativa de upload. Analisar novamente o arquivo HTTPS
+  já importado retornou o mesmo asset e `imported`; teste unitário também impede qualquer
+  consulta de rede nesse caminho. Não foi implementado download YouTube/Twitch.
 - Oito requisições concorrentes equivalentes retornaram a mesma produção, sem novas
   tarefas/arquivos. Nova versão explícita gerou IDs distintos. Exclusão individual,
   produção, restauração e preservação da outra produção foram aprovadas pela API.

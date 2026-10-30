@@ -26,6 +26,9 @@ direitos de terceiros. Os créditos acompanham a descrição dos cortes.
 ## Pelo dashboard
 
 1. Abra **Criar cortes** e escolha **Colar link**, **Escolher vídeo** ou **Enviar arquivo**.
+   Para links, clique **Analisar vídeo** e confira título, canal, duração e miniatura quando
+   disponíveis. O cartão distingue metadados, importação e arquivo já importado; sem acesso,
+   oferece **Enviar o original autorizado** em vez de iniciar uma produção bloqueada.
 2. Permissões existentes e licenças de catálogo são reutilizadas automaticamente.
    Se faltar autorização, confirme que possui direitos para aquela mídia. Não há seleção
    de fonte, formulário técnico de licença nem cadastro obrigatório para upload.

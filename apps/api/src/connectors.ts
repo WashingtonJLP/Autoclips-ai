@@ -29,6 +29,59 @@ export interface Connector {
 }
 export const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
+export function thumbnailUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      ['i.ytimg.com', 'static-cdn.jtvnw.net', 'i.vimeocdn.com'].includes(
+        url.hostname,
+      )
+    )
+      return url.href;
+  } catch {
+    /* Metadados externos incompletos não impedem a análise. */
+  }
+}
+export function identityForUrl(value: string) {
+  const url = normalizedUrl(value);
+  let platform = 'direct',
+    id = url.href;
+  if (
+    ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(
+      url.hostname,
+    )
+  ) {
+    platform = 'youtube';
+    id =
+      url.hostname === 'youtu.be'
+        ? url.pathname.slice(1)
+        : (url.searchParams.get('v') ??
+          url.pathname.match(/^\/(?:shorts|embed)\/([^/]+)$/)?.[1] ??
+          '');
+    if (!/^[\w-]{11}$/.test(id)) return;
+  } else if (['twitch.tv', 'www.twitch.tv'].includes(url.hostname)) {
+    platform = 'twitch';
+    id = url.pathname.match(/^\/videos\/(\d+)$/)?.[1] ?? '';
+    if (!id) return;
+  } else if (
+    ['vimeo.com', 'www.vimeo.com', 'player.vimeo.com'].includes(url.hostname)
+  ) {
+    platform = 'vimeo';
+    id = url.pathname.match(/(?:\/video)?\/(\d+)$/)?.[1] ?? '';
+    if (!id) return;
+  } else if (url.hostname === 'commons.wikimedia.org') {
+    platform = 'commons';
+    id = decodeURIComponent(url.pathname.replace(/^\/wiki\//, '')).replaceAll(
+      '_',
+      ' ',
+    );
+  } else if (!/\.(mp4|webm|ogv|mov|mp3|wav|m4a)$/i.test(url.pathname)) return;
+  return hash([platform, id]);
+}
 export function normalizedUrl(value: string) {
   const url = new URL(value);
   if (
@@ -121,6 +174,8 @@ export class YouTubeConnector implements Connector {
       id,
       `https://www.youtube.com/watch?v=${id}`,
     );
+    item.reason =
+      'Reconhecemos o vídeo do YouTube, mas esta integração não fornece o arquivo original. Envie o original autorizado para criar os cortes.';
     if (process.env.YOUTUBE_API_KEY) {
       const url = new URL('https://www.googleapis.com/youtube/v3/videos');
       url.search = new URLSearchParams({
@@ -137,15 +192,24 @@ export class YouTubeConnector implements Connector {
         language: video.snippet.defaultAudioLanguage,
         publishedAt: video.snippet.publishedAt,
         duration: isoDuration(video.contentDetails.duration),
-        metadata: { license: video.status.license },
+        metadata: {
+          license: video.status.license,
+          thumbnailUrl: thumbnailUrl(
+            video.snippet.thumbnails?.high?.url ??
+              video.snippet.thumbnails?.default?.url,
+          ),
+        },
       });
     } else {
       const url = new URL('https://www.youtube.com/oembed');
       url.searchParams.set('url', item.url);
       url.searchParams.set('format', 'json');
       const data = await json(url);
-      Object.assign(item, { title: data.title, author: data.author_name });
-      item.reason += ' Duração e busca exigem YOUTUBE_API_KEY no servidor.';
+      Object.assign(item, {
+        title: data.title,
+        author: data.author_name,
+        metadata: { thumbnailUrl: thumbnailUrl(data.thumbnail_url) },
+      });
     }
     return item;
   }
@@ -200,6 +264,9 @@ export class VimeoConnector implements Connector {
       title: data.title,
       author: data.author_name,
       duration: data.duration,
+      reason:
+        'Reconhecemos o vídeo do Vimeo, mas o original não está disponível nesta integração. Envie o arquivo autorizado para continuar.',
+      metadata: { thumbnailUrl: thumbnailUrl(data.thumbnail_url) },
     };
   }
   async search(): Promise<Candidate[]> {
@@ -220,7 +287,17 @@ export class TwitchConnector implements Connector {
       this.platform,
       id,
       `https://www.twitch.tv/videos/${id}`,
+      `Vídeo da Twitch ${id}`,
     );
+    item.reason =
+      'A integração Twitch não disponibiliza o original deste vídeo. Envie o arquivo autorizado para criar os cortes.';
+    if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_ACCESS_TOKEN)
+      return {
+        ...item,
+        reason:
+          'A conexão com a Twitch ainda não está configurada. Você pode continuar enviando o original autorizado.',
+        metadata: { metadataUnavailable: true },
+      };
     const data = await this.request(`videos?id=${id}`);
     const video = data.data?.[0];
     if (!video) throw new BadRequestException('VOD não encontrado');
@@ -231,6 +308,13 @@ export class TwitchConnector implements Connector {
       language: video.language,
       duration: isoDuration(`PT${String(video.duration).toUpperCase()}`),
       publishedAt: video.published_at,
+      metadata: {
+        thumbnailUrl: thumbnailUrl(
+          video.thumbnail_url
+            ?.replace('%{width}', '640')
+            .replace('%{height}', '360'),
+        ),
+      },
     };
   }
   private request(path: string) {

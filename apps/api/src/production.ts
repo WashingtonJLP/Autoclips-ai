@@ -2,7 +2,14 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Candidate, Connectors, hash, normalizedUrl } from './connectors';
+import {
+  Candidate,
+  Connectors,
+  hash,
+  normalizedUrl,
+  identityForUrl,
+  thumbnailUrl,
+} from './connectors';
 import { parse, sourceSchema } from './contracts';
 import type { Pipeline } from './pipeline';
 import { UnavailableProvider } from './selection/provider';
@@ -40,6 +47,43 @@ export const productionRequest = z
     }),
   })
   .strict();
+export function describeMedia<
+  T extends {
+    platform: string;
+    path?: string | null;
+    accessible: boolean;
+    rightsConfirmed: boolean;
+    metadata: unknown;
+  },
+>(asset: T) {
+  const metadata = (asset.metadata ?? {}) as {
+    thumbnailUrl?: unknown;
+    catalog?: unknown;
+    metadataUnavailable?: boolean;
+  };
+  const kind = asset.path
+    ? 'imported'
+    : !asset.accessible
+      ? 'upload_required'
+      : asset.rightsConfirmed || metadata.catalog
+        ? 'available'
+        : 'permission_required';
+  const message =
+    kind === 'imported'
+      ? 'O arquivo já está importado. Vamos reutilizá-lo, sem baixar novamente.'
+      : kind === 'available'
+        ? 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
+        : kind === 'permission_required'
+          ? 'O arquivo pode ser importado. Se não houver permissão registrada, confirme que possui os direitos para este vídeo.'
+          : asset.platform === 'twitch' && metadata.metadataUnavailable
+            ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
+            : `Podemos identificar o vídeo, mas a integração ${asset.platform === 'youtube' ? 'YouTube' : asset.platform === 'twitch' ? 'Twitch' : asset.platform === 'vimeo' ? 'Vimeo' : 'desta plataforma'} não fornece o arquivo original. Envie o original autorizado para criar os cortes.`;
+  return {
+    ...asset,
+    thumbnailUrl: thumbnailUrl(metadata.thumbnailUrl),
+    availability: { kind, message },
+  };
+}
 export class Production {
   readonly connectors = new Connectors();
   constructor(private readonly p: Pipeline) {}
@@ -72,6 +116,7 @@ export class Production {
         author: data.author,
         duration: data.duration,
         metadata: data.metadata,
+        reason: data.reason,
         ...(source
           ? { sourceId: source.id, rightsConfirmed: true, reason: data.reason }
           : {}),
@@ -80,7 +125,14 @@ export class Production {
   }
   async inspect(body: unknown) {
     const { url } = parse(z.object({ url: z.url().max(2000) }).strict(), body);
-    return this.remember(await this.connectors.resolve(url));
+    const identity = identityForUrl(url);
+    const imported = identity
+      ? await this.p.db.mediaAsset.findUnique({ where: { identity } })
+      : null;
+    if (imported?.path) return describeMedia(imported);
+    return describeMedia(
+      await this.remember(await this.connectors.resolve(url)),
+    );
   }
   async start(body: unknown) {
     const request = parse(productionRequest, body);
@@ -91,7 +143,7 @@ export class Production {
     if (!asset.path && (!asset.accessible || !asset.mediaUrl))
       throw new BadRequestException({
         code: 'ORIGINAL_REQUIRED',
-        message: `${asset.reason ?? 'O arquivo original não está disponível pelo conector desta plataforma.'} Envie o arquivo original que você possui autorização para usar.`,
+        message: describeMedia(asset).availability.message,
       });
     const sourceId = request.sourceId ?? asset.sourceId;
     let source = sourceId
