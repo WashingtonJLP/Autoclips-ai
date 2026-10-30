@@ -30,6 +30,7 @@ export const productionRequest = z
     autoRun: z.boolean().default(true),
     reprocess: z.boolean().default(false),
     confirmCatalogRights: z.boolean().default(false),
+    confirmPermission: z.boolean().default(false),
     authorization: sourceSchema.omit({ name: true, url: true }).optional(),
     options: productionOptions.default({
       maxClips: 3,
@@ -87,30 +88,50 @@ export class Production {
       where: { id: request.assetId },
     });
     if (!asset) throw new NotFoundException('Vídeo importado não encontrado');
+    if (!asset.path && (!asset.accessible || !asset.mediaUrl))
+      throw new BadRequestException({
+        code: 'ORIGINAL_REQUIRED',
+        message: `${asset.reason ?? 'O arquivo original não está disponível pelo conector desta plataforma.'} Envie o arquivo original que você possui autorização para usar.`,
+      });
     const sourceId = request.sourceId ?? asset.sourceId;
     let source = sourceId
       ? await this.p.db.source.findUnique({ where: { id: sourceId } })
       : await this.p.db.source.findFirst({
           where: { url: asset.url, commercialUseVerified: true },
         });
-    if (!source && (request.authorization || request.confirmCatalogRights)) {
+    if (source && !source.commercialUseVerified) source = null;
+    if (
+      !source &&
+      (request.authorization ||
+        request.confirmPermission ||
+        (asset.metadata as Record<string, unknown>).catalog)
+    ) {
       const catalog = (asset.metadata as Record<string, unknown>).catalog;
       const c = catalog as
         | { license?: unknown; evidenceUrl?: unknown; attribution?: unknown }
         | undefined;
       const rights =
         request.authorization ??
-        (request.confirmCatalogRights && c
+        (c
           ? sourceSchema.omit({ name: true, url: true }).parse({
               license: c.license,
               evidenceUrl: c.evidenceUrl,
               attribution: c.attribution,
               commercialUseVerified: true,
             })
-          : null);
+          : request.confirmPermission
+            ? {
+                license: 'PERMISSION' as const,
+                evidenceUrl: asset.url,
+                attribution:
+                  asset.author ||
+                  'Autorização declarada pelo operador para esta mídia.',
+                commercialUseVerified: true as const,
+              }
+            : null);
       if (rights) {
         const data = sourceSchema.parse({
-          name: asset.title,
+          name: asset.title.slice(0, 200),
           url: asset.url,
           ...rights,
         });
@@ -119,21 +140,30 @@ export class Production {
           update: {},
           create: {
             ...data,
+            purpose: 'media',
             verifiedAt: new Date(),
             connectorKey: `authorization-${asset.identity}`,
             mediaUrl: asset.mediaUrl,
             evidence: {
               confirmedAt: new Date().toISOString(),
               metadata: asset.metadata,
+              method: request.authorization
+                ? 'documented-authorization'
+                : c
+                  ? 'catalog-license'
+                  : 'operator-declaration',
+              scope: asset.identity,
             },
           },
         });
       }
     }
     if (!source?.commercialUseVerified)
-      throw new BadRequestException(
-        'Este vídeo não possui autorização de reutilização registrada. Cadastre uma fonte com evidência.',
-      );
+      throw new BadRequestException({
+        code: 'AUTHORIZATION_REQUIRED',
+        message:
+          'Confirme que esta mídia é sua ou que você tem autorização para criar cortes. Nenhuma fonte precisa ser cadastrada.',
+      });
     const catalog = (asset.metadata as Record<string, unknown>).catalog as
       | { url?: string; mediaUrl?: string; evidence?: { sha1?: string } }
       | undefined;
@@ -148,11 +178,7 @@ export class Production {
       !(catalog?.url && sameResource(source.url, catalog.url))
     )
       throw new BadRequestException(
-        'A autorização selecionada pertence a outra origem. Cadastre a fonte com a URL deste vídeo.',
-      );
-    if (!asset.path && (!asset.accessible || !asset.mediaUrl))
-      throw new BadRequestException(
-        'Não foi possível acessar o arquivo original por um método autorizado. Envie o original; links públicos não autorizam extração.',
+        'A autorização informada pertence a outro vídeo. Use a autorização desta mídia.',
       );
     await this.p.db.mediaAsset.update({
       where: { id: asset.id },
@@ -185,6 +211,7 @@ export class Production {
       where: { renderKey },
       update: {},
       create: {
+        testContent: asset.testContent,
         sourceId: source.id,
         operation: asset.path ? 'transcribe' : 'download',
         ...(reused
@@ -204,11 +231,15 @@ export class Production {
           : {
               url: asset.mediaUrl!,
               key: hash(asset.identity),
+              ...(asset.platform === 'direct'
+                ? { public_file_authorized: true }
+                : {}),
               ...(asset.platform === 'commons' && catalog?.evidence?.sha1
                 ? { expected_sha1: catalog.evidence.sha1 }
                 : {}),
             },
         editorial: {
+          mediaTitle: asset.title,
           options,
           assetId: asset.id,
           reprocess: request.reprocess,
@@ -227,6 +258,7 @@ export class Production {
   findTranscript(sourceId: string, path: string, language = 'auto') {
     return this.p.db.task.findFirst({
       where: {
+        deletedAt: null,
         sourceId,
         operation: 'transcribe',
         status: 'COMPLETED',
@@ -241,13 +273,17 @@ export class Production {
     });
   }
   async registerUpload(
-    sourceId: string,
+    sourceId: string | undefined,
     result: { path: string; sha256: string; duration: number },
+    title = 'Vídeo enviado',
+    testContent = false,
   ) {
-    const source = await this.p.db.source.findUnique({
-      where: { id: sourceId },
-    });
-    if (!source?.commercialUseVerified)
+    const source = sourceId
+      ? await this.p.db.source.findUnique({
+          where: { id: sourceId },
+        })
+      : null;
+    if (sourceId && !source?.commercialUseVerified)
       throw new BadRequestException('Fonte autorizada não encontrada');
     const existing = await this.p.db.mediaAsset.findUnique({
       where: { sha256: result.sha256 },
@@ -259,16 +295,25 @@ export class Production {
       create: {
         identity: hash(['upload', result.sha256]),
         platform: 'upload',
-        url: source.url,
-        title: source.name,
-        author: source.attribution,
-        sourceId,
+        url:
+          source?.url ??
+          `https://local.autoclips.invalid/uploads/${result.sha256}`,
+        title: source?.name ?? title.slice(0, 200),
+        author: source?.attribution,
+        sourceId: source?.id,
         ...result,
-        rightsConfirmed: true,
+        rightsConfirmed: !!source,
+        testContent:
+          testContent ||
+          (!!source &&
+            /fixture|sintétic|System.Speech/i.test(source.attribution)),
         accessible: true,
         metadata: {
           method: 'upload',
-          testContent: /teste|fixture|sintétic/i.test(source.attribution),
+          testContent:
+            testContent ||
+            (!!source &&
+              /fixture|sintétic|System.Speech/i.test(source.attribution)),
         },
       },
     });

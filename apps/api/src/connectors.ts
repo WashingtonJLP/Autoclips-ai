@@ -321,11 +321,6 @@ export class DirectConnector implements Connector {
     return /\.(mp4|webm|ogv|mov|mp3|wav|m4a)$/i.test(u.pathname);
   }
   async resolve(u: URL) {
-    const allowed = [
-      'upload.wikimedia.org',
-      ...(process.env.MEDIA_DOWNLOAD_HOSTS ?? '').split(','),
-    ];
-    const accessible = allowed.includes(u.hostname);
     return {
       ...blocked(
         this.platform,
@@ -333,11 +328,10 @@ export class DirectConnector implements Connector {
         u.toString(),
         decodeURIComponent(u.pathname.split('/').at(-1)!),
       ),
-      accessible,
-      mediaUrl: accessible ? u.toString() : undefined,
-      reason: accessible
-        ? 'Registre a fonte e a autorização antes de importar.'
-        : 'Host de mídia não aprovado pelo operador. Envie o arquivo original autorizado.',
+      accessible: true,
+      mediaUrl: u.toString(),
+      reason:
+        'Arquivo direto. O acesso público e a integridade serão validados ao importar; confirme a autorização apenas se solicitada.',
     };
   }
   async search(): Promise<Candidate[]> {

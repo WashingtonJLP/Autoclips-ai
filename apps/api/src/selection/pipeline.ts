@@ -64,7 +64,12 @@ export class SelectionPipeline {
       where: { id },
       include: { source: true },
     });
-    if (!task || task.operation !== 'transcribe' || task.status !== 'COMPLETED')
+    if (
+      !task ||
+      task.deletedAt ||
+      task.operation !== 'transcribe' ||
+      task.status !== 'COMPLETED'
+    )
       throw new NotFoundException('Transcrição concluída não encontrada');
     if (!task.source.commercialUseVerified)
       throw new BadRequestException('Autorização comercial ausente');
@@ -96,6 +101,7 @@ export class SelectionPipeline {
       editorial?.reprocess ? task.id : null,
     ])}`;
     const data = {
+      testContent: task.testContent,
       sourceId: task.sourceId,
       operation: 'select',
       payload: { transcriptionTaskId },
@@ -157,6 +163,7 @@ export class SelectionPipeline {
     const rendered = await this.db.task.findMany({
       where: {
         sourceId: task.sourceId,
+        deletedAt: null,
         operation: 'clip',
         status: { in: ['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED'] },
         payload: { path: ['path'], equals: path },
@@ -286,6 +293,7 @@ export class SelectionPipeline {
         if (exact) return exact;
         const previous = await tx.task.findMany({
           where: {
+            deletedAt: null,
             sourceId: task.sourceId,
             operation: 'clip',
             status: { in: ['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED'] },
@@ -334,11 +342,14 @@ export class SelectionPipeline {
           );
         return tx.task.create({
           data: {
+            testContent: task.testContent,
             sourceId: task.sourceId,
             operation: 'clip',
             renderKey,
             payload,
             editorial: {
+              assetId: (selection.editorial as { assetId?: string } | null)
+                ?.assetId,
               title: candidate.title,
               description: `${candidate.description}\n\nFonte: ${task.source.url}\n${task.source.attribution}\nLicença: ${task.source.license}\nEvidência: ${task.source.evidenceUrl}`,
               selectionTaskId: selection.id,

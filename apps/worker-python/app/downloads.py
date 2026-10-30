@@ -26,22 +26,26 @@ class DownloadRequest(BaseModel):
     key: str = Field(pattern=r"^[a-f0-9]{64}$")
     rights: Rights
     expected_sha1: str | None = Field(default=None, pattern=r"^[a-f0-9]{40}$")
+    public_file_authorized: bool = False
 
 
-def validate_url(url: str):
+def validate_url(url: str, public_file_authorized: bool = False):
     parsed = urlsplit(url)
     allowed = {"upload.wikimedia.org"} | set(
         filter(None, os.getenv("MEDIA_DOWNLOAD_HOSTS", "").split(","))
     )
     if (
         parsed.scheme != "https"
-        or parsed.hostname not in allowed
+        or (parsed.hostname not in allowed and not public_file_authorized)
         or parsed.username
         or parsed.password
         or parsed.port not in {None, 443}
     ):
         raise HTTPException(400, "Host de download não autorizado")
-    addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    try:
+        addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise HTTPException(400, "Não foi possível localizar o arquivo neste domínio. Confira o link ou envie o original.") from exc
     if not addresses:
         raise HTTPException(400, "Host sem endereço público")
     for entry in addresses:
@@ -80,7 +84,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def download(request: DownloadRequest) -> dict:
     url = str(request.url)
-    address = validate_url(url)
+    address = validate_url(url, request.public_file_authorized)
     extension = Path(urlsplit(url).path).suffix.lower()
     if extension not in {".mp4", ".webm", ".ogv", ".mov", ".mp3", ".wav", ".m4a"}:
         raise HTTPException(400, "Formato de download não permitido")

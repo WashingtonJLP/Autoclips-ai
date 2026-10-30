@@ -5,6 +5,7 @@ datasource db {
   provider = "postgresql"
 }
 model Source {
+  purpose String @default("monitoring")
   id String @id @default(cuid())
   name String
   url String
@@ -20,6 +21,8 @@ model Source {
   evidence Json?
 }
 model Task {
+  deletedAt DateTime?
+  testContent Boolean @default(false)
   id String @id @default(cuid())
   sourceId String
   source Source @relation(fields: [sourceId], references: [id])
@@ -41,6 +44,7 @@ model Task {
 }
 
 model MediaAsset {
+  testContent Boolean @default(false)
   id String @id @default(cuid())
   identity String @unique
   platform String

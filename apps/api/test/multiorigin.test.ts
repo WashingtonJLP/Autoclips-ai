@@ -76,6 +76,7 @@ test('transcrição sem fala encerra continuação com causa real e não chama s
   const p = {
     db: {
       task: {
+        findUnique: async () => null,
         update: async (v: unknown) => {
           update = v;
         },

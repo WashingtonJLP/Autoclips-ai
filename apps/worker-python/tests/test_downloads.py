@@ -26,7 +26,7 @@ def test_download_streams_atomically_and_reuses_file(tmp_path, monkeypatch):
     from app import downloads
 
     monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
-    monkeypatch.setattr(downloads, "validate_url", lambda url: None)
+    monkeypatch.setattr(downloads, "validate_url", lambda url, authorized=False: None)
     monkeypatch.setattr(downloads, "duration", lambda path: 10)
 
     class Response:
@@ -81,3 +81,15 @@ def test_worker_auth_and_artifact_scope(tmp_path, monkeypatch):
     assert client.get(f"/artifacts/{filename}", headers=headers).text == "legenda"
     assert client.get("/artifacts/secrets.json", headers=headers).status_code == 404
     assert not Path(tmp_path / "secrets.json").exists()
+
+
+def test_authorized_public_file_keeps_network_and_https_guards(monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))])
+    assert validate_url("https://example.org/own.mp4", True) == "93.184.216.34"
+    for address in ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1"]:
+        monkeypatch.setattr(socket, "getaddrinfo", lambda *a, ip=address, **kw: [(0, 0, 0, "", (ip, 443))])
+        with pytest.raises(HTTPException):
+            validate_url("https://example.org/own.mp4", True)
+    for url in ["http://example.org/a.mp4", "https://user:password@example.org/a.mp4", "https://example.org:8443/a.mp4"]:
+        with pytest.raises(HTTPException):
+            validate_url(url, True)

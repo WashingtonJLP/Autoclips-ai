@@ -7,9 +7,23 @@ esse token no servidor. Não há gestão multiusuário.
 - `GET /health`: processo vivo; `GET /ready`: PostgreSQL, Redis e worker.
 - `POST /internal/echo`: comunicação NestJS → FastAPI.
 - `POST /internal/queue-test` e `GET /internal/queue-test/:id`: tarefa echo BullMQ.
-- `POST /sources`: `name`, `url`, `license` (`CC0`, `CC-BY-4.0`, `PERMISSION`),
-  `evidenceUrl`, `attribution`, `commercialUseVerified: true`.
-- `GET /sources`: últimas 100 fontes.
+- `POST /media/inspect`: `{url}`; identifica plataforma e metadados, sem autorizar extração.
+- `POST /media/upload?extension=mp4&name=original.mp4&testContent=false`: binário;
+  não exige fonte. `sourceId` continua opcional por compatibilidade. Upload não concede direitos.
+- `POST /productions`: `{assetId, options?, reprocess?, confirmPermission?}`.
+  A falta de original retorna `ORIGINAL_REQUIRED`; a falta de direitos retorna
+  `AUTHORIZATION_REQUIRED`. Reenvie com `confirmPermission: true` somente após declaração
+  do operador. Permissões válidas e licenças de catálogo são reutilizadas automaticamente.
+- `GET /library`: produções reais agrupadas com etapas/cortes, status consolidado e
+  `testContent`; sem limitar o agrupamento aos últimos 100 jobs.
+- `POST /jobs/:id/remove`: exclusão lógica de produção/corte, cancelamento das etapas
+  ativas e agendamentos, preservação de passos compartilhados; retorna `undoToken`.
+- `POST /jobs/:id/restore`: `{undoToken}`; desfaz somente aquela exclusão.
+  Artefatos excluídos retornam 404; arquivos permanecem no disco para recuperação.
+- `POST /sources`: cadastro opcional de monitoramento com `name`, `url` e `monitoring?`.
+  Direitos são opcionais e não presumidos. Para registrar direitos documentados pela API,
+  forneça `license`, `evidenceUrl`, `attribution`, `commercialUseVerified: true`.
+- `GET /sources`: últimas 100 fontes de monitoramento, sem permissões internas por mídia.
 - `POST /jobs`: `sourceId`, `path` relativo à mídia, `operation` (`transcribe`
   ou `clip`); cortes exigem `start` e `end` em segundos, até 180 segundos.
 - `GET /jobs` e `GET /jobs/:id`: status e resultado persistidos.
@@ -35,7 +49,7 @@ Saídas ficam no diretório de mídia e metadados no PostgreSQL. Novas rotas:
   registra evidência, verifica catálogo novamente e enfileira download autorizado.
 - `POST /jobs`: `autoRun: true` opcional para transcrição; etapas seguintes são automáticas.
 - `POST /jobs/:id/continue`: retoma continuação pendente de etapa concluída.
-- `GET /jobs/:id/artifacts/video|subtitles|transcript`: arquivo de saída autenticado.
+- `GET /jobs/:id/artifacts/video|subtitles|transcript`: arquivo autenticado, com Range/206 para o player.
 - `GET /platforms`: contas conectadas (sem tokens) e últimos agendamentos.
 - `POST /oauth/start`: `{platform: "youtube" | "tiktok"}`; URL oficial de autorização.
 - `POST /oauth/callback`: `{platform, state, code}`; state atômico, tokens cifrados.

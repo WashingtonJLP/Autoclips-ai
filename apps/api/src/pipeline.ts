@@ -14,6 +14,7 @@ import {
   ServiceUnavailableException,
   StreamableFile,
   Req,
+  Res,
   Query,
 } from '@nestjs/common';
 import { IncomingMessage } from 'node:http';
@@ -29,6 +30,8 @@ import { Discovery, discoveryRequest, importRequest } from './discovery';
 import { Task } from '@prisma/client';
 import { Readable } from 'node:stream';
 import { Publishing } from './publication';
+import { library, removeItem, restoreItem } from './library';
+import { z } from 'zod';
 
 @Injectable()
 export class Pipeline implements OnModuleInit, OnModuleDestroy {
@@ -100,16 +103,38 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           where: { id: job.id },
           include: { source: true },
         });
-        if (record.status === 'CANCELLED') return { cancelled: true };
+        if (record.status === 'CANCELLED' || record.deletedAt)
+          return { cancelled: true };
+        if (record.parentId) {
+          const parent = await this.db.task.findUnique({
+            where: { id: record.parentId },
+          });
+          if (parent?.deletedAt || parent?.status === 'CANCELLED') {
+            await this.db.task.update({
+              where: { id: record.id },
+              data: {
+                status: 'CANCELLED',
+                deletedAt: parent.deletedAt,
+                continuationDone: true,
+              },
+            });
+            return { cancelled: true };
+          }
+        }
         // BullMQ pode reentregar após reinício; reutiliza uma etapa já persistida.
         if (record.status === 'COMPLETED') {
           await this.advance(record);
           return record.result;
         }
-        await this.db.task.update({
-          where: { id: record.id },
+        const claimed = await this.db.task.updateMany({
+          where: {
+            id: record.id,
+            deletedAt: null,
+            status: { not: 'CANCELLED' },
+          },
           data: { status: 'PROCESSING', error: null },
         });
+        if (!claimed.count) return { cancelled: true };
         try {
           const request = {
             ...(record.payload as Record<string, unknown>),
@@ -176,7 +201,10 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     this.queue.on('error', (error) => this.logger.error(error.message));
     // Recupera tarefas persistidas se Redis foi perdido ou houve falha ao enfileirar.
     for (const task of await this.db.task.findMany({
-      where: { status: { in: ['QUEUED', 'PROCESSING', 'RETRYING'] } },
+      where: {
+        deletedAt: null,
+        status: { in: ['QUEUED', 'PROCESSING', 'RETRYING'] },
+      },
     })) {
       if (task.operation === 'select' && task.status !== 'QUEUED') {
         await this.db.task.update({
@@ -207,7 +235,12 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     }
     // Recuperação apenas ao iniciar. Não há polling do PostgreSQL em inatividade.
     for (const task of await this.db.task.findMany({
-      where: { autoRun: true, status: 'COMPLETED', continuationDone: false },
+      where: {
+        deletedAt: null,
+        autoRun: true,
+        status: 'COMPLETED',
+        continuationDone: false,
+      },
     }))
       await this.advance(task);
     for (const entry of await this.db.publication.findMany({
@@ -230,6 +263,8 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     try {
       await this.continueTask(task);
     } catch (error) {
+      const current = await this.db.task.findUnique({ where: { id: task.id } });
+      if (current?.deletedAt || current?.status === 'CANCELLED') return;
       const message =
         error instanceof Error ? error.message : 'Falha ao continuar produção';
       this.logger.error(`Continuação ${task.id}: ${message}`);
@@ -247,6 +282,8 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     }
   }
   async continueTask(task: Task) {
+    const current = await this.db.task.findUnique({ where: { id: task.id } });
+    if (current?.deletedAt || current?.status === 'CANCELLED') return;
     if (!task.autoRun || task.continuationDone || task.status !== 'COMPLETED')
       return;
     if (task.operation === 'download') {
@@ -280,6 +317,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
       const next = await this.db.task.upsert({
         where: { renderKey: nextKey },
         create: {
+          testContent: task.testContent,
           sourceId: task.sourceId,
           operation: 'transcribe',
           ...(reused
@@ -390,11 +428,28 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
 @Controller()
 export class PipelineController {
   constructor(@Inject(Pipeline) private readonly pipeline: Pipeline) {}
+  @Get('library')
+  library() {
+    return library(this.pipeline.db);
+  }
+  @Post('jobs/:id/remove')
+  remove(@Param('id') id: string) {
+    return removeItem(this.pipeline.db, id);
+  }
+  @Post('jobs/:id/restore')
+  restore(@Param('id') id: string, @Body() body: unknown) {
+    const value = body as { undoToken?: unknown };
+    if (
+      typeof value?.undoToken !== 'string' ||
+      !Number.isFinite(Date.parse(value.undoToken))
+    )
+      throw new BadRequestException('Informe a exclusão que deseja desfazer.');
+    return restoreItem(this.pipeline.db, id, value.undoToken);
+  }
   @Get('media')
   media() {
     return this.pipeline.db.mediaAsset.findMany({
       orderBy: { createdAt: 'desc' },
-      take: 100,
     });
   }
   @Post('media/inspect')
@@ -410,11 +465,15 @@ export class PipelineController {
     @Req() request: IncomingMessage,
     @Query('sourceId') sourceId: string,
     @Query('extension') extension: string,
+    @Query('name') name?: string,
+    @Query('testContent') testContent?: string,
   ) {
-    const source = await this.pipeline.db.source.findUnique({
-      where: { id: sourceId ?? '' },
-    });
-    if (!source?.commercialUseVerified)
+    const source = sourceId
+      ? await this.pipeline.db.source.findUnique({
+          where: { id: sourceId ?? '' },
+        })
+      : null;
+    if (sourceId && !source?.commercialUseVerified)
       throw new BadRequestException(
         'Cadastre e selecione uma fonte com autorização antes do upload',
       );
@@ -440,7 +499,12 @@ export class PipelineController {
           ? result.detail
           : 'Não foi possível validar o arquivo enviado',
       );
-    return this.pipeline.production.registerUpload(source.id, result);
+    return this.pipeline.production.registerUpload(
+      source?.id,
+      result,
+      name,
+      testContent === 'true',
+    );
   }
   @Post('discovery/multisearch')
   multiSearch(@Body() body: unknown) {
@@ -576,7 +640,16 @@ export class PipelineController {
     return task;
   }
   @Get('jobs/:id/artifacts/:kind')
-  async artifact(@Param('id') id: string, @Param('kind') kind: string) {
+  async artifact(
+    @Param('id') id: string,
+    @Param('kind') kind: string,
+    @Req() request: IncomingMessage,
+    @Res({ passthrough: true })
+    reply: {
+      status(code: number): unknown;
+      setHeader(name: string, value: string): unknown;
+    },
+  ) {
     const task = await this.status(id);
     const keys: Record<string, string> = {
       video: 'video_path',
@@ -595,12 +668,18 @@ export class PipelineController {
       {
         headers: {
           Authorization: `Bearer ${process.env.WORKER_API_TOKEN ?? ''}`,
+          ...(request.headers.range ? { Range: request.headers.range } : {}),
         },
         signal: AbortSignal.timeout(600000),
       },
     );
     if (!response.ok || !response.body)
       throw new NotFoundException('Artefato indisponível');
+    reply.status(response.status);
+    for (const name of ['accept-ranges', 'content-range', 'content-length']) {
+      const value = response.headers.get(name);
+      if (value) reply.setHeader(name, value);
+    }
     return new StreamableFile(
       Readable.fromWeb(
         response.body as import('node:stream/web').ReadableStream,
@@ -685,6 +764,7 @@ export class PipelineController {
   @Get('sources')
   sources() {
     return this.pipeline.db.source.findMany({
+      where: { purpose: 'monitoring' },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -692,16 +772,30 @@ export class PipelineController {
   @Post('sources')
   async source(@Body() body: unknown) {
     const { monitoring, ...data } = parse(
-      sourceSchema.extend({
-        monitoring: automationSchema
-          .omit({ name: true, kind: true })
-          .optional(),
-      }),
+      sourceSchema
+        .partial({
+          license: true,
+          evidenceUrl: true,
+          attribution: true,
+          commercialUseVerified: true,
+        })
+        .extend({
+          commercialUseVerified: z.boolean().default(false),
+          monitoring: automationSchema
+            .omit({ name: true, kind: true })
+            .optional(),
+        }),
       body,
     );
+    if (data.commercialUseVerified) parse(sourceSchema, data);
     const source = await this.pipeline.db.source.create({
       data: {
         ...data,
+        license: data.commercialUseVerified ? data.license! : 'UNKNOWN',
+        evidenceUrl: data.evidenceUrl ?? data.url,
+        attribution:
+          data.attribution ??
+          'Direitos não informados; fonte cadastrada apenas para descoberta.',
         verifiedAt: new Date(),
         ...(monitoring
           ? { evidence: { monitoring: monitoring as Prisma.InputJsonValue } }
@@ -749,6 +843,7 @@ export class PipelineController {
   @Get('jobs')
   jobs() {
     return this.pipeline.db.task.findMany({
+      where: { deletedAt: null },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -756,7 +851,8 @@ export class PipelineController {
   @Get('jobs/:id')
   async status(@Param('id') id: string) {
     const task = await this.pipeline.db.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Tarefa não encontrada');
+    if (!task || task.deletedAt)
+      throw new NotFoundException('Produção ou corte não encontrado');
     return task;
   }
   @Post('jobs/:id/publish')

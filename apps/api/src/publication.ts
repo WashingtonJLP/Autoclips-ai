@@ -347,7 +347,12 @@ export class Publishing {
     )
       throw new BadRequestException('Agende entre agora e 365 dias');
     const task = await this.db.task.findUnique({ where: { id: taskId } });
-    if (!task || task.operation !== 'clip' || task.status !== 'COMPLETED')
+    if (
+      !task ||
+      task.deletedAt ||
+      task.operation !== 'clip' ||
+      task.status !== 'COMPLETED'
+    )
       throw new BadRequestException('Agendamento exige MP4 concluído');
     const entry = await this.db.publication.upsert({
       where: { taskId_platform: { taskId, platform } },
@@ -378,6 +383,7 @@ export class Publishing {
     });
     if (
       task.status !== 'COMPLETED' ||
+      task.deletedAt ||
       task.operation !== 'clip' ||
       !task.source.commercialUseVerified
     )
