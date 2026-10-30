@@ -12,11 +12,7 @@ export default function SourceForm({ onSaved }: { onSaved: () => void }) {
       () =>
         api<Source>('sources', {
           ...Object.fromEntries(
-            [...fields].filter(([key]) =>
-              ['name', 'url', 'license', 'evidenceUrl', 'attribution'].includes(
-                key,
-              ),
-            ),
+            [...fields].filter(([key]) => ['name', 'url'].includes(key)),
           ),
           commercialUseVerified: fields.get('commercialUseVerified') === 'on',
           ...(fields.get('monitor') === 'on'
@@ -41,7 +37,7 @@ export default function SourceForm({ onSaved }: { onSaved: () => void }) {
               }
             : {}),
         }),
-      'Fonte cadastrada com evidência de direitos.',
+      'Fonte cadastrada para descoberta e monitoramento.',
     );
     if (source) {
       form.reset();
@@ -50,9 +46,10 @@ export default function SourceForm({ onSaved }: { onSaved: () => void }) {
   }
   return (
     <form className="panel" onSubmit={(e) => void submit(e)}>
-      <h2>Cadastrar fonte autorizada</h2>
+      <h2>Cadastrar fonte para monitorar</h2>
       <p className="panel-intro">
-        Registre a origem, os créditos e a evidência da permissão.
+        Salve um canal ou catálogo para descobrir novos vídeos. Criar cortes não
+        exige este cadastro.
       </p>
       <Feedback error={action.error} message={action.message} />
       <div className="form-grid">
@@ -65,41 +62,9 @@ export default function SourceForm({ onSaved }: { onSaved: () => void }) {
             placeholder="Nome para identificar esta fonte"
           />
         </label>
-        <label>
-          Licença
-          <select name="license">
-            <option value="CC0">CC0</option>
-            <option value="CC-BY-4.0">CC BY 4.0</option>
-            <option value="PERMISSION">Permissão expressa</option>
-          </select>
-        </label>
         <label className="span-all">
           URL de origem
           <input name="url" type="url" required placeholder="https://" />
-        </label>
-        <label className="span-all">
-          Evidência dos direitos
-          <input
-            name="evidenceUrl"
-            type="url"
-            required
-            placeholder="https://"
-          />
-          <small>Link para a licença ou autorização de uso comercial.</small>
-        </label>
-        <label className="span-all">
-          Créditos e atribuição
-          <textarea
-            name="attribution"
-            required
-            maxLength={2000}
-            placeholder="Autor, origem e condições de uso"
-          />
-        </label>
-        <label className="check-label span-all">
-          <input name="commercialUseVerified" type="checkbox" required />
-          Revisei a origem e confirmei a autorização de reutilização comercial
-          desta mídia.
         </label>
       </div>
       <details className="advanced">

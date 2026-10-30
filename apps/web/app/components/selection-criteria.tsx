@@ -1,4 +1,6 @@
-export default function SelectionCriteria() {
+export default function SelectionCriteria({
+  defaultFallback = '',
+}: { defaultFallback?: '' | 'heuristic' } = {}) {
   return (
     <details className="advanced">
       <summary>Critérios da seleção e fallback</summary>
@@ -37,7 +39,7 @@ export default function SelectionCriteria() {
       </label>
       <label>
         Se a IA estiver indisponível
-        <select name="fallback" defaultValue="">
+        <select name="fallback" defaultValue={defaultFallback}>
           <option value="">Usar política do servidor</option>
           <option value="none">Interromper com explicação</option>
           <option value="heuristic">Usar heurística local identificada</option>

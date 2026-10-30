@@ -23,22 +23,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-fixture.ps1 -
 Write-Output "Arquivo para selecionar no upload: media/fixtures/$nome.mp4"
 ```
 
-1. Abra **Fontes → Cadastrar fonte**, nomeie o teste, use a URL do repositório como origem,
-   licença **Permissão expressa**, evidência
-   `https://github.com/WashingtonJLP/Autoclips-ai/blob/main/scripts/create-fixture.ps1`
-   e créditos `Fala sintetizada localmente com System.Speech e imagem FFmpeg para teste autorizado`.
-   Confirme a revisão dos direitos e salve.
-2. Abra **Criar cortes → Enviar arquivo**, selecione o MP4 gerado pelo seletor de
-   arquivos e escolha essa fonte autorizada. Não é necessário informar caminho interno.
-   Para mídia já enviada, use **Escolher vídeo** e selecione o item importado.
-3. Defina quantidade, idioma e duração; mantenha **Concluir automaticamente** e
-   clique em **Gerar cortes**. Confira o provedor exibido: o padrão do código é mock,
-   mas o ambiente local pode estar configurado para Gemini. Se quiser concluir sem IA
-   externa indisponível, abra **Critérios da seleção e fallback** e escolha
-   **Usar heurística local identificada**. Isso não realiza análise semântica por IA.
-   O fallback explícito também atende quota diária Gemini esgotada, sem enviar chamadas
-   nem modificar limites. Sem fallback, a quota continua interrompendo a seleção.
-4. Clique em **Ver resultado** ou abra **Biblioteca**. Abra a prévia do corte e
+1. Abra **Criar cortes → Enviar arquivo** e selecione o MP4 gerado. Em **Mais opções**,
+   marque **Este arquivo é conteúdo sintético de teste** para separá-lo na Biblioteca.
+   Não é necessário cadastrar fonte nem digitar caminho interno. Para mídia existente,
+   use **Escolher vídeo**, pesquise pelo título e habilite os testes se necessário.
+2. Defina quantidade, idioma e duração e clique em **Gerar cortes**. Se não houver
+   permissão registrada, confirme **Tenho autorização — gerar cortes** somente se
+   possuir esses direitos. A declaração fica vinculada ao arquivo, sem aprovar outras mídias.
+3. O fluxo continua automaticamente. Em **Mais opções** consta o provedor;
+   **Critérios da seleção e fallback** permite mudar a heurística local já selecionada
+   no formulário. Quando a IA estiver indisponível, ela produz resultados identificados,
+   sem análise semântica. O `.env` e sua política padrão não são alterados pela interface.
+4. Clique em **Ver resultado** ou abra **Biblioteca → Produções / Cortes**. Abra a prévia do corte e
    use **Baixar MP4** / **Baixar SRT**.
    Revise a fala, tempos, título e descrição com atribuição.
    Transcrições com palavras usam blocos de até 42 caracteres/3 s, sincronizados
@@ -95,10 +91,22 @@ MEDIA_DOWNLOAD_HOSTS=seu-dominio.example
 }
 ```
 
-O download aceita HTTPS direto, hosts explícitos e endereços públicos, sem redirects,
+O download de arquivo direto autorizado aceita HTTPS e endereços públicos, sem redirects,
 cookies de plataformas, extratores ou contorno de bloqueios. Formatos: MP4, WebM,
 OGV e MOV. Há limites de bytes/tempo e validação FFprobe até duas horas. Manifestos
 são configuração confiável do servidor; nunca aceite URLs de manifestos do cliente.
+
+Fontes são opcionais e servem para descoberta/monitoramento; podem ser cadastradas
+sem afirmar direitos comerciais. Permissões por mídia são registros internos separados
+da lista de fontes monitoradas. Licenças de catálogo são registradas automaticamente;
+sem licença ou permissão válida, o processamento pede uma declaração para aquela mídia.
+Isso não substitui verificação jurídica nem libera download de plataformas sem original.
+
+Na Biblioteca, **Excluir corte** preserva os irmãos; **Excluir produção** cancela etapas
+ativas e retira seus cortes exclusivos. Etapas compartilhadas continuam disponíveis
+para outras produções. A exclusão é lógica e pode ser desfeita; originais e artefatos
+continuam no disco, sem liberação automática de espaço. Agendamentos pendentes dos
+itens excluídos são cancelados. Restaurar não reinicia tarefas canceladas.
 
 ## IA por API, desabilitada por padrão
 

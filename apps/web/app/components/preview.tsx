@@ -11,9 +11,11 @@ const VideoPlayer = dynamic(() => import('./video-player'), {
 export default function Preview({
   task,
   onClose,
+  onRemove,
 }: {
   task: Task | null;
   onClose: () => void;
+  onRemove?: (task: Task) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -100,11 +102,26 @@ export default function Preview({
             ) : null}
             <Link
               className="button secondary"
-              href={`/criar?fonte=${task.sourceId}`}
+              href={
+                task.editorial?.assetId
+                  ? `/criar?midia=${task.editorial.assetId}`
+                  : '/criar'
+              }
               prefetch={false}
             >
               Gerar novos cortes
             </Link>
+            {onRemove && (
+              <button
+                className="button secondary"
+                onClick={() => {
+                  onRemove(task);
+                  onClose();
+                }}
+              >
+                Excluir corte
+              </button>
+            )}
             <Link
               className="button secondary"
               href={`/publicacoes?video=${task.id}`}

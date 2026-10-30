@@ -1,16 +1,8 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, useAction, useResources } from '../shared/api';
-import {
-  Source,
-  Task,
-  title,
-  duration,
-  paginate,
-  statusNames,
-  matchesTask,
-} from '../shared/models';
+import { Task, paginate, date } from '../shared/models';
 import {
   PageHeader,
   Refresh,
@@ -18,11 +10,20 @@ import {
   Empty,
   Pagination,
   Badge,
-  Advanced,
 } from '../components/ui';
 import ClipCard from '../components/clip-card';
 import Preview from '../components/preview';
-import SelectionResults from '../selection-results';
+type Production = {
+  id: string;
+  title: string;
+  createdAt: string;
+  testContent: boolean;
+  status: string;
+  error: string | null;
+  clips: Task[];
+  steps: { id: string; operation: string; status: string }[];
+};
+type Library = { productions: Production[]; clips: Task[] };
 export default function LibraryView({
   initialTab,
   initialVideo,
@@ -30,53 +31,77 @@ export default function LibraryView({
   initialTab: string;
   initialVideo?: string;
 }) {
-  const { data, loading, error, refresh } = useResources([
-      'jobs',
-      'sources',
-      ...(initialVideo ? [`jobs/${initialVideo}`] : []),
-    ]),
-    action = useAction();
-  const tasks = (data.jobs ?? []) as Task[],
-    sources = (data.sources ?? []) as Source[];
-  const [tab, setTab] = useState(initialTab),
-    [query, setQuery] = useState(''),
-    [status, setStatus] = useState(''),
-    [page, setPage] = useState(1),
-    [preview, setPreview] = useState<Task | null>(null);
-  const focused = initialVideo
-    ? (data[`jobs/${initialVideo}`] as Task | undefined)
-    : undefined;
-  const focusId = focused?.id;
-  useEffect(() => {
-    if (focused?.operation === 'clip' && focused.status === 'COMPLETED')
-      setPreview(focused);
-  }, [focusId]);
-  const list = paginate(
-    tasks
-      .filter((t) =>
-        tab === 'videos'
-          ? t.operation === 'clip'
-          : ['transcribe', 'select'].includes(t.operation),
-      )
-      .filter(
-        (t) =>
-          (!status || t.status === status) && matchesTask(t, sources, query),
-      ),
-    page,
-    tab === 'videos' ? 8 : 4,
+  const { data, loading, error, refresh } = useResources(['library']);
+  const content = (data.library ?? { productions: [], clips: [] }) as Library;
+  const action = useAction();
+  const [tab, setTab] = useState(initialVideo ? 'cortes' : initialTab);
+  const [scope, setScope] = useState('real');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [preview, setPreview] = useState<Task | null>(null);
+  const [removing, setRemoving] = useState<{
+    id: string;
+    label: string;
+    production: boolean;
+  } | null>(null);
+  const [undo, setUndo] = useState<{ id: string; undoToken: string } | null>(
+    null,
   );
-  async function mutate(path: string, body: unknown, success: string) {
-    await action.run(async () => {
-      await api(path, body);
-      await refresh();
-    }, success);
-  }
+  const focused = content.clips.find((t) => t.id === initialVideo);
+  useEffect(() => {
+    if (focused?.status === 'COMPLETED') {
+      setPreview(focused);
+      setScope(focused.testContent ? 'test' : 'real');
+    }
+  }, [focused?.id]);
+  const running = content.productions.some((p) =>
+    ['QUEUED', 'PROCESSING', 'RETRYING'].includes(p.status),
+  );
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [running, refresh]);
+  const productions = content.productions.filter(
+    (p) => !!p.testContent === (scope === 'test'),
+  );
+  const clips = content.clips.filter(
+    (p) => !!p.testContent === (scope === 'test'),
+  );
+  const matches = (s: string) =>
+    s.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'));
+  const productionList = paginate(
+    productions.filter(
+      (p) => (!status || p.status === status) && matches(p.title),
+    ),
+    page,
+    6,
+  );
+  const clipList = paginate(
+    clips.filter(
+      (t) =>
+        (!status || t.status === status) &&
+        matches(t.editorial?.title ?? 'Corte'),
+    ),
+    page,
+    8,
+  );
+  const list = tab === 'producoes' ? productionList : clipList;
+  const askClip = (task: Task) =>
+    setRemoving({
+      id: task.id,
+      label: task.editorial?.title ?? 'este corte',
+      production: false,
+    });
   return (
     <>
       <PageHeader
         eyebrow="SEUS RESULTADOS"
         title="Biblioteca"
-        description="Assista, revise os trechos e encontre o próximo vídeo para agendar."
+        description="Produções e cortes, prontos para acompanhar, assistir e baixar."
       >
         <Refresh onClick={() => void refresh()} disabled={loading} />
         <Link href="/criar" className="button primary" prefetch={false}>
@@ -90,8 +115,8 @@ export default function LibraryView({
       />
       <div className="tabs" aria-label="Conteúdo da biblioteca">
         {[
-          ['videos', 'Vídeos'],
-          ['trechos', 'Transcrições e trechos'],
+          ['producoes', 'Produções'],
+          ['cortes', 'Cortes'],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -99,18 +124,32 @@ export default function LibraryView({
             onClick={() => {
               setTab(key);
               setPage(1);
+              setStatus('');
             }}
           >
-            {label}
+            {label} ({key === 'producoes' ? productions.length : clips.length})
           </button>
         ))}
       </div>
       <div className="toolbar">
         <label>
-          <span className="filter-label">Buscar</span>
+          Conteúdo
+          <select
+            value={scope}
+            onChange={(e) => {
+              setScope(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="real">Minhas mídias</option>
+            <option value="test">Testes sintéticos</option>
+          </select>
+        </label>
+        <label>
+          Buscar
           <input
             type="search"
-            placeholder="Buscar pelo título ou pela fonte"
+            placeholder="Buscar pelo título"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -118,8 +157,8 @@ export default function LibraryView({
             }}
           />
         </label>
-        <label style={{ maxWidth: 230 }}>
-          <span className="filter-label">Status</span>
+        <label>
+          Status
           <select
             value={status}
             onChange={(e) => {
@@ -127,127 +166,167 @@ export default function LibraryView({
               setPage(1);
             }}
           >
-            <option value="">Todos os status</option>
-            {['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED', 'FAILED'].map(
-              (s) => (
-                <option key={s} value={s}>
-                  {statusNames[s]}
-                </option>
-              ),
-            )}
+            <option value="">Todos</option>
+            <option value="QUEUED">Na fila</option>
+            <option value="PROCESSING">Processando</option>
+            <option value="RETRYING">Nova tentativa</option>
+            <option value="COMPLETED">Concluído</option>
+            <option value="FAILED">Falhou</option>
+            <option value="CANCELLED">Cancelado</option>
           </select>
         </label>
       </div>
+      <p className="muted small">
+        {scope === 'test'
+          ? 'Conteúdo sintético separado das suas mídias.'
+          : 'Mídias de teste ficam separadas em Testes sintéticos.'}{' '}
+        {clips.filter((t) => t.status === 'COMPLETED').length} corte(s)
+        pronto(s).
+      </p>
+      {removing && (
+        <section
+          className="notice"
+          role="region"
+          aria-label="Confirmar exclusão"
+        >
+          <h2>Excluir {removing.production ? 'produção' : 'corte'}?</h2>
+          <p>
+            {removing.label}.{' '}
+            {removing.production
+              ? 'A produção e seus cortes exclusivos sairão da Biblioteca. Etapas compartilhadas com outras produções serão preservadas.'
+              : 'Os outros cortes da produção serão preservados.'}{' '}
+            Você poderá desfazer. Arquivos originais não serão apagados.
+          </p>
+          <button
+            className="button secondary"
+            disabled={action.busy}
+            onClick={() =>
+              void action.run(async () => {
+                const result = await api<{ id: string; undoToken: string }>(
+                  `jobs/${removing.id}/remove`,
+                  {},
+                );
+                setUndo(result);
+                setRemoving(null);
+                setPreview(null);
+                await refresh();
+              }, 'Item excluído da Biblioteca. Você pode desfazer.')
+            }
+          >
+            Confirmar exclusão
+          </button>
+          <button className="button subtle" onClick={() => setRemoving(null)}>
+            Cancelar
+          </button>
+        </section>
+      )}
+      {undo && (
+        <p role="status">
+          Item excluído.{' '}
+          <button
+            className="button subtle"
+            disabled={action.busy}
+            onClick={() =>
+              void action.run(async () => {
+                await api(`jobs/${undo.id}/restore`, {
+                  undoToken: undo.undoToken,
+                });
+                setUndo(null);
+                await refresh();
+              }, 'Exclusão desfeita. Produções canceladas não são reiniciadas automaticamente.')
+            }
+          >
+            Desfazer exclusão
+          </button>
+        </p>
+      )}
       {!list.items.length && !loading && !error && (
         <Empty
-          title="Nenhum resultado por aqui"
-          description="Altere os filtros ou crie sua primeira produção."
+          title="Nenhum resultado nesta lista"
+          description="Altere os filtros ou crie uma produção."
           href="/criar"
         />
       )}
-      <div className={tab === 'videos' ? 'clips-grid' : 'stack'}>
-        {list.items.map((task) =>
-          tab === 'videos' && task.status === 'COMPLETED' ? (
-            <ClipCard task={task} key={task.id} onPreview={setPreview} />
-          ) : (
-            <article key={task.id} className="panel">
+      {tab === 'producoes' ? (
+        <div className="stack">
+          {productionList.items.map((p) => (
+            <article className="panel" key={p.id}>
               <div className="row">
-                <h2>{title(task, sources)}</h2>
-                <Badge status={task.status} />
+                <h2>{p.title}</h2>
+                <Badge status={p.status} />
               </div>
-              <p className="muted small" style={{ marginTop: 9 }}>
-                {task.operation === 'select'
-                  ? 'Seleção de trechos'
-                  : task.operation === 'clip'
-                    ? 'Corte vertical'
-                    : 'Transcrição'}{' '}
-                · {duration(task)}
+              <p className="muted small">
+                {date(p.createdAt)} ·{' '}
+                {p.clips.filter((t) => t.status === 'COMPLETED').length}{' '}
+                corte(s) pronto(s)
               </p>
-              {task.error && <p className="inline-error">{task.error}</p>}
-              {task.operation === 'transcribe' &&
-                task.status === 'COMPLETED' && (
-                  <>
-                    <details className="advanced">
-                      <summary>Revisar transcrição</summary>
-                      <p className="description" style={{ marginTop: 12 }}>
-                        {(Array.isArray(task.result?.segments)
-                          ? task.result.segments
-                          : []
-                        )
-                          .map((s: { text: string }) => s.text)
-                          .join(' ')}
-                      </p>
-                    </details>
-                    <button
-                      className="button primary"
-                      style={{ marginTop: 18 }}
-                      disabled={action.busy}
-                      onClick={() =>
-                        void mutate(
-                          `jobs/${task.id}/select`,
-                          {},
-                          'Seleção enfileirada. Atualize para acompanhar.',
-                        )
-                      }
-                    >
-                      Selecionar trechos
-                    </button>
-                    {task.result?.transcript_path ? (
-                      <a
-                        className="button subtle"
-                        style={{ marginLeft: 8 }}
-                        href={`/api/backend/jobs/${task.id}/artifacts/transcript`}
-                        download
-                      >
-                        Baixar transcrição
-                      </a>
-                    ) : null}
-                  </>
-                )}
-              {task.operation === 'select' &&
-                task.status === 'COMPLETED' &&
-                task.result && (
-                  <SelectionResults
-                    result={task.result}
-                    busy={action.busy}
-                    onRender={(candidateId) =>
-                      void mutate(
-                        `jobs/${task.id}/render-selection`,
-                        { candidateId },
-                        'Renderização solicitada. O vídeo aparecerá na biblioteca.',
-                      )
-                    }
-                  />
-                )}
-              {task.autoRun &&
-                task.status === 'COMPLETED' &&
-                !task.continuationDone && (
-                  <button
-                    className="button secondary"
-                    style={{ marginTop: 14 }}
-                    disabled={action.busy}
-                    onClick={() =>
-                      void mutate(
-                        `jobs/${task.id}/continue`,
-                        {},
-                        'Continuação solicitada.',
-                      )
-                    }
-                  >
-                    Retomar fluxo automático
-                  </button>
-                )}
-              <Advanced value={task} />
+              {p.error && <p className="inline-error">{p.error}</p>}
+              <div className="row">
+                <Link
+                  className="button secondary"
+                  href={`/criar?producao=${p.id}`}
+                  prefetch={false}
+                >
+                  Acompanhar produção
+                </Link>
+                <button
+                  className="button subtle"
+                  onClick={() =>
+                    setRemoving({ id: p.id, label: p.title, production: true })
+                  }
+                >
+                  Excluir produção
+                </button>
+              </div>
+              <details className="advanced">
+                <summary>Etapas e cortes ({p.clips.length})</summary>
+                <ul>
+                  {p.steps.map((s) => (
+                    <li key={s.id}>
+                      {(
+                        {
+                          download: 'Importação',
+                          transcribe: 'Transcrição',
+                          select: 'Seleção',
+                          clip: 'Renderização',
+                        } as Record<string, string>
+                      )[s.operation] ?? s.operation}
+                      : <Badge status={s.status} />
+                    </li>
+                  ))}
+                </ul>
+                <div className="clips-grid">
+                  {p.clips.map((t) => (
+                    <ClipCard
+                      key={t.id}
+                      task={t}
+                      onPreview={setPreview}
+                      onRemove={askClip}
+                    />
+                  ))}
+                </div>
+              </details>
             </article>
-          ),
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="clips-grid">
+          {clipList.items.map((t) => (
+            <ClipCard
+              key={t.id}
+              task={t}
+              onPreview={setPreview}
+              onRemove={askClip}
+            />
+          ))}
+        </div>
+      )}
       <Pagination {...list} onChange={setPage} />
-      <p className="muted small" style={{ marginTop: 14 }}>
-        Consulta aos últimos 100 registros. Atualize quando quiser acompanhar
-        novas etapas.
-      </p>
-      <Preview task={preview} onClose={() => setPreview(null)} />
+      <Preview
+        task={preview}
+        onClose={() => setPreview(null)}
+        onRemove={askClip}
+      />
     </>
   );
 }

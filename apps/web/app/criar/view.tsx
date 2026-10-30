@@ -24,7 +24,6 @@ import TaskList from '../components/task-list';
 import Icon from '../components/glyph';
 export default function CreateView({
   initialTask,
-  initialSource,
   initialAsset,
 }: {
   initialTask?: string;
@@ -32,7 +31,6 @@ export default function CreateView({
   initialAsset?: string;
 }) {
   const { data, loading, error, refresh } = useResources([
-    'sources',
     'jobs',
     ...(initialTask ? [`jobs/${initialTask}`] : []),
   ]);
@@ -108,9 +106,6 @@ export default function CreateView({
       <div className="two-columns">
         <ProductionForm
           initialAsset={initialAsset}
-          initialSource={initialSource}
-          sources={sources}
-          tasks={tasks}
           onCreated={(task) => {
             setStarted(task);
             router.replace(`/criar?producao=${task.id}`);
@@ -122,15 +117,16 @@ export default function CreateView({
           {!root ? (
             <>
               <p className="panel-intro">
-                Escolha a fonte e a mídia. Depois de iniciar, acompanhe o
-                andamento por aqui.
+                Cole um link, envie um arquivo ou escolha um vídeo. Depois de
+                iniciar, acompanhe o andamento por aqui.
               </p>
               <div className="info-card">
                 <Icon name="check" />
                 <h3>Uma etapa de cada vez</h3>
                 <p>
                   A produção continua em segundo plano. Use Atualizar para
-                  consultar o progresso quando quiser.
+                  consultar o progresso quando quiser. A tela também atualiza
+                  durante o processamento.
                 </p>
               </div>
               <p className="muted small" style={{ marginTop: 18 }}>

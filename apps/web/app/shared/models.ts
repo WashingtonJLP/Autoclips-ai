@@ -11,6 +11,7 @@ export type Source = {
   mediaUrl?: string;
 };
 export type Task = {
+  testContent?: boolean;
   id: string;
   sourceId: string;
   operation: string;
@@ -26,6 +27,8 @@ export type Task = {
   createdAt: string;
   updatedAt?: string;
   editorial?: {
+    assetId?: string;
+    mediaTitle?: string;
     title: string;
     description: string;
     candidateId?: string;
@@ -87,6 +90,7 @@ export const active = (task: Task) =>
 export function title(task: Task, sources: Source[] = []) {
   return (
     task.editorial?.title ||
+    task.editorial?.mediaTitle ||
     sources.find((s) => s.id === task.sourceId)?.name ||
     task.payload.path?.split('/').at(-1) ||
     operationNames[task.operation] ||

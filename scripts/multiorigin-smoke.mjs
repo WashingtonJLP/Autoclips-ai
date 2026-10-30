@@ -141,7 +141,7 @@ await api(`jobs/${explicit.id}/cancel`, {});
 const blocked = await api('media/inspect', {
   url: 'https://example.org/unauthorized.mp4',
 });
-assert.equal(blocked.accessible, false);
+assert.equal(blocked.rightsConfirmed, false);
 await api('productions', { assetId: blocked.id }, 400);
 const automation = await api('automations', {
   name: 'Teste monitoramento sem credenciais',

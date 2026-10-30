@@ -7,7 +7,7 @@ export default async function Page({
   const { aba, video } = await searchParams;
   return (
     <LibraryView
-      initialTab={aba === 'trechos' ? 'trechos' : 'videos'}
+      initialTab={aba === 'videos' || aba === 'cortes' ? 'cortes' : 'producoes'}
       initialVideo={video && /^[a-zA-Z0-9]+$/.test(video) ? video : undefined}
     />
   );

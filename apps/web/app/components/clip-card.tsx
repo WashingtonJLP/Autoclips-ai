@@ -4,16 +4,20 @@ import { Badge } from './ui';
 export default function ClipCard({
   task,
   onPreview,
+  onRemove,
 }: {
   task: Task;
   onPreview: (task: Task) => void;
+  onRemove?: (task: Task) => void;
 }) {
   return (
     <article className="clip-card">
       <Thumbnail
         id={task.id}
         label={title(task)}
-        onClick={() => onPreview(task)}
+        onClick={() => {
+          if (task.status === 'COMPLETED') onPreview(task);
+        }}
       />
       <div className="clip-card-body">
         <div className="row">
@@ -35,6 +39,20 @@ export default function ClipCard({
           <span className="badge">Seleção de teste (mock)</span>
         )}
         <p className="muted small">{date(task.createdAt)}</p>
+        {task.status === 'COMPLETED' && (
+          <a
+            className="button subtle"
+            href={`/api/backend/jobs/${task.id}/artifacts/video`}
+            download
+          >
+            Baixar MP4
+          </a>
+        )}
+        {onRemove && (
+          <button className="button subtle" onClick={() => onRemove(task)}>
+            Excluir corte
+          </button>
+        )}
       </div>
     </article>
   );

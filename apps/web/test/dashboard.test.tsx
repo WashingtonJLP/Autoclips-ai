@@ -13,6 +13,8 @@ import ClipCard from '../app/components/clip-card';
 import Preview from '../app/components/preview';
 import { Pagination, Feedback, Advanced } from '../app/components/ui';
 import ProductionForm from '../app/components/production-form';
+import SourceForm from '../app/components/source-form';
+import LibraryView from '../app/biblioteca/view';
 
 const task: Task = {
   id: 'interno',
@@ -62,7 +64,7 @@ test('galeria e prévia fechada não montam players nem expõem IDs no texto', (
     <ClipCard task={task} onPreview={() => {}} />,
   );
   assert.ok(!html.includes('<video'));
-  assert.ok(!html.includes('interno'));
+  assert.ok(!html.replace(/<[^>]*>/g, '').includes('interno'));
   assert.ok(html.includes('&lt;script&gt;'));
   assert.ok(html.includes('Assistir'));
   const advanced = renderToStaticMarkup(
@@ -77,7 +79,7 @@ test('galeria e prévia fechada não montam players nem expõem IDs no texto', (
     '',
   );
 });
-test('formulário preserva fonte, caminho, modo automático e feedback acessível', () => {
+test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', () => {
   const source = {
     id: 'fonte',
     name: 'Fonte autorizada',
@@ -88,9 +90,7 @@ test('formulário preserva fonte, caminho, modo automático e feedback acessíve
     commercialUseVerified: true,
     verifiedAt: '2026-10-28T00:00:00Z',
   };
-  const html = renderToStaticMarkup(
-    <ProductionForm sources={[source]} tasks={[]} onCreated={() => {}} />,
-  );
+  const html = renderToStaticMarkup(<ProductionForm onCreated={() => {}} />);
   assert.equal(
     matchesTask(task, [source], 'FONTE AUTORIZADA'),
     true,
@@ -99,15 +99,23 @@ test('formulário preserva fonte, caminho, modo automático e feedback acessíve
   assert.equal(matchesTask(task, [source], 'boa ideia'), true);
   assert.equal(matchesTask(task, [source], 'não existe'), false);
   for (const field of [
-    'name="sourceId"',
     'name="url"',
-    'name="autoRun"',
     'Gerar cortes',
     'Colar link',
     'Escolher vídeo',
     'Enviar arquivo',
   ])
     assert.ok(html.includes(field));
+  for (const field of [
+    'name="sourceId"',
+    'name="path"',
+    'name="license"',
+    'name="evidenceUrl"',
+    'Fonte autorizada',
+  ])
+    assert.ok(!html.includes(field));
+  assert.ok(html.includes('continuam automaticamente'));
+  assert.match(html, /value="heuristic" selected/);
   assert.ok(
     !html.includes('type="file"'),
     'Entrada inicial por link não deve exigir upload',
@@ -118,4 +126,18 @@ test('formulário preserva fonte, caminho, modo automático e feedback acessíve
   assert.ok(
     notice.includes('role="alert"') && notice.includes('role="status"'),
   );
+});
+
+test('fontes servem para descoberta e biblioteca separa produções, cortes e testes', () => {
+  const source = renderToStaticMarkup(<SourceForm onSaved={() => {}} />);
+  assert.ok(source.includes('monitorar'));
+  for (const field of [
+    'name="license"',
+    'name="evidenceUrl"',
+    'name="commercialUseVerified"',
+  ])
+    assert.ok(!source.includes(field));
+  const library = renderToStaticMarkup(<LibraryView initialTab="producoes" />);
+  assert.ok(library.includes('Produções') && library.includes('Cortes'));
+  assert.ok(library.includes('Testes sintéticos'));
 });

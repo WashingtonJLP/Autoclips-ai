@@ -1,5 +1,4 @@
 'use client';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, useAction, useResources } from '../shared/api';
@@ -75,9 +74,9 @@ export default function Sources() {
   return (
     <>
       <PageHeader
-        eyebrow="ORIGEM E DIREITOS"
+        eyebrow="DESCOBERTA OPCIONAL"
         title="Fontes"
-        description="Encontre conteúdo autorizado e mantenha suas evidências organizadas."
+        description="Monitore canais e automatize a descoberta. Você não precisa cadastrar fontes para criar cortes."
       >
         <Refresh onClick={() => void refresh()} disabled={loading} />
         <button
@@ -176,17 +175,21 @@ export default function Sources() {
             {list.items.map((source) => (
               <article className="source-card" key={source.id}>
                 <div className="row">
-                  <span className="badge">{source.license}</span>
+                  <span className="badge">
+                    {source.license === 'UNKNOWN'
+                      ? 'Somente descoberta'
+                      : source.license}
+                  </span>
                   <span
                     className={`badge ${source.commercialUseVerified ? 'success' : 'warning'}`}
                   >
                     {source.commercialUseVerified
                       ? 'Direitos revisados'
-                      : 'Revisão pendente'}
+                      : 'Sem permissão de processamento'}
                   </span>
                 </div>
                 <h3>{source.name}</h3>
-                <p>Revisada em {date(source.verifiedAt)}</p>
+                <p>Cadastrada em {date(source.verifiedAt)}</p>
                 <div className="row">
                   <a
                     className="text-link"
@@ -194,15 +197,10 @@ export default function Sources() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Ver evidência ↗
+                    {source.commercialUseVerified
+                      ? 'Ver evidência ↗'
+                      : 'Abrir origem ↗'}
                   </a>
-                  <Link
-                    className="button subtle"
-                    href={`/criar?fonte=${source.id}`}
-                    prefetch={false}
-                  >
-                    Usar fonte
-                  </Link>
                 </div>
                 <details style={{ marginTop: 16 }}>
                   <summary>Créditos e origem</summary>

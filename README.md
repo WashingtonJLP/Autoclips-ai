@@ -1,5 +1,7 @@
 # AutoClips AI
 
+[Criação simplificada e Biblioteca: funcionamento, exclusão e validação](docs/criacao-simplificada.md).
+
 [Verificação funcional final do MVP — resultados e pendências](docs/validacao-final-mvp.md).
 
 [Seleção inteligente com Gemini: configuração, critérios e validação pendente](docs/selecao-inteligente.md).

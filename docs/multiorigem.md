@@ -6,16 +6,16 @@ continuam acessíveis somente na rede Docker. Publicação permanece simulada.
 
 ## Suporte implementado
 
-| Origem                                       | Descoberta/metadados                                                                                    | Obtenção do original                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| YouTube                                      | oEmbed por link; busca e duração com `YOUTUBE_API_KEY`                                                  | Upload do original autorizado. Não há extrator nem download pela Data API                       |
-| Twitch                                       | VODs e monitoramento por ID numérico de canal via Helix, com `TWITCH_CLIENT_ID` e `TWITCH_ACCESS_TOKEN` | Upload do original autorizado; nenhum extrator de VOD                                           |
-| Vimeo                                        | Metadados oEmbed por link, incluindo duração                                                            | Upload do original autorizado; busca global e download autenticado ainda não implementados      |
-| Wikimedia Commons                            | API oficial; licença, autoria, evidência, hash e duração quando disponíveis                             | Arquivo original público CC0/CC BY 4.0, após confirmação dos direitos                           |
-| Catálogo autorizado                          | Manifestos já configurados em `SOURCE_MANIFEST_URLS`                                                    | Links diretos do manifesto, com evidência e hosts aprovados                                     |
-| RSS / podcasts                               | Feeds RSS 2.0 configurados em `SOURCE_FEED_URLS`, com enclosures                                        | HTTPS público em host aprovado, após autorização individual; áudio recebe fundo vertical gerado |
-| Arquivo direto / armazenamento compartilhado | Identificação do link; duração validada ao importar                                                     | HTTPS em `MEDIA_DOWNLOAD_HOSTS`, com autorização expressa ou licença registrada                 |
-| Upload local                                 | SHA-256, duração e validação FFprobe                                                                    | Envio binário até 512 MB, sem caminhos internos                                                 |
+| Origem                                       | Descoberta/metadados                                                                                    | Obtenção do original                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| YouTube                                      | oEmbed por link; busca e duração com `YOUTUBE_API_KEY`                                                  | Upload do original autorizado. Não há extrator nem download pela Data API                        |
+| Twitch                                       | VODs e monitoramento por ID numérico de canal via Helix, com `TWITCH_CLIENT_ID` e `TWITCH_ACCESS_TOKEN` | Upload do original autorizado; nenhum extrator de VOD                                            |
+| Vimeo                                        | Metadados oEmbed por link, incluindo duração                                                            | Upload do original autorizado; busca global e download autenticado ainda não implementados       |
+| Wikimedia Commons                            | API oficial; licença, autoria, evidência, hash e duração quando disponíveis                             | Arquivo original público CC0/CC BY 4.0, após confirmação dos direitos                            |
+| Catálogo autorizado                          | Manifestos já configurados em `SOURCE_MANIFEST_URLS`                                                    | Links diretos do manifesto, com evidência e hosts aprovados                                      |
+| RSS / podcasts                               | Feeds RSS 2.0 configurados em `SOURCE_FEED_URLS`, com enclosures                                        | HTTPS público em host aprovado, após autorização individual; áudio recebe fundo vertical gerado  |
+| Arquivo direto / armazenamento compartilhado | Identificação do link; duração validada ao importar                                                     | HTTPS público, após permissão específica ou licença registrada; sem cadastro obrigatório de host |
+| Upload local                                 | SHA-256, duração e validação FFprobe                                                                    | Envio binário até 512 MB, sem caminhos internos                                                  |
 
 Os conectores distinguem identidade, metadados, direitos confirmados e disponibilidade
 do arquivo. O simples fato de encontrar uma URL nunca aprova sua reutilização.
@@ -26,16 +26,19 @@ direitos de terceiros. Os créditos acompanham a descrição dos cortes.
 ## Pelo dashboard
 
 1. Abra **Criar cortes** e escolha **Colar link**, **Escolher vídeo** ou **Enviar arquivo**.
-2. Para links Commons, confirme a revisão dos direitos do catálogo. Para arquivos
-   diretos, escolha a fonte da mesma origem ou registre autorização expressa no formulário.
-   Uploads exigem uma fonte cadastrada em **Fontes → Cadastrar fonte**, com evidência.
-3. Defina quantidade, idioma e duração máxima. Mantenha processamento automático e
+2. Permissões existentes e licenças de catálogo são reutilizadas automaticamente.
+   Se faltar autorização, confirme que possui direitos para aquela mídia. Não há seleção
+   de fonte, formulário técnico de licença nem cadastro obrigatório para upload.
+3. Defina quantidade, idioma e duração máxima. O processamento é automático;
    clique em **Gerar cortes**. A tela atualiza a cadeia enquanto houver trabalho ativo.
-4. Abra **Biblioteca** para assistir, baixar MP4/SRT, ler créditos e descrição.
+4. Abra **Biblioteca → Produções / Cortes** para assistir, baixar MP4/SRT e excluir.
+   Mídias sintéticas ficam em **Testes sintéticos**. Exclusões são reversíveis e preservam
+   originais e etapas compartilhadas; não removem imediatamente arquivos do disco.
    Seleções mock recebem identificação visível. **Gerar novos cortes** retorna ao formulário.
 5. Produções idênticas são reutilizadas. Para repetir intencionalmente, marque
-   **Opções avançadas → Reprocessar explicitamente**. Caminhos internos ficam apenas
-   na opção técnica avançada.
+   **Mais opções → Gerar uma nova versão**. A interface não solicita caminhos internos.
+   O formulário seleciona heurística identificada quando a IA estiver indisponível;
+   essa política pode ser alterada antes de iniciar, sem mudar a configuração do servidor.
 
 Em **Fontes → Busca automática**, escolha plataformas, temas, categorias de consulta,
 idiomas, duração, recência, quantidade de vídeos/cortes e frequência. A busca pode

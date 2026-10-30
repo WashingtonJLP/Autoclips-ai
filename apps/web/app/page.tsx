@@ -14,25 +14,31 @@ export default function Overview() {
     'sources',
     'platforms',
     'health',
+    'library',
   ]);
-  const tasks = (data.jobs ?? []) as Task[],
+  const tasks = ((data.jobs ?? []) as Task[]).filter(
+      (t) =>
+        !t.testContent &&
+        ['download', 'transcribe', 'select', 'clip'].includes(t.operation),
+    ),
     sources = (data.sources ?? []) as Source[],
     platforms = data.platforms as Platforms | undefined;
-  const clips = tasks.filter(
-      (t) => t.operation === 'clip' && t.status === 'COMPLETED',
+  const library = data.library as
+    | { productions: { testContent: boolean; status: string }[]; clips: Task[] }
+    | undefined;
+  const productions = (library?.productions ?? []).filter(
+    (p) => !p.testContent,
+  );
+  const clips = (library?.clips ?? []).filter(
+      (t) => !t.testContent && t.status === 'COMPLETED',
     ),
     [preview, setPreview] = useState<Task | null>(null);
   const metrics = [
-    [
-      'Produções',
-      tasks.filter((t) => !t.parentId).length,
-      'Nos últimos registros',
-      'video',
-    ],
+    ['Produções', productions.length, 'Suas produções', 'video'],
     [
       'Em andamento',
-      tasks.filter(active).length,
-      'Tarefas na fila ou processando',
+      productions.filter((p) => active(p as Task)).length,
+      'Produções na fila ou processando',
       'clock',
     ],
     ['Cortes prontos', clips.length, 'Disponíveis na biblioteca', 'library'],
