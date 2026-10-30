@@ -1,4 +1,4 @@
-// Executar no container api. Sem --live-simple: somente preparação local.
+// Executar no container api. Sem --live-simple/--live-json: somente preparação local.
 const assert = require('node:assert/strict');
 const { writeFileSync, mkdirSync } = require('node:fs');
 const { createHash } = require('node:crypto');
@@ -18,9 +18,22 @@ const { PrismaUsageLedger } = require('../apps/api/dist/selection/ledger');
 const {
   progressiveGeminiPayloads,
   simpleDiagnosticReservation,
+  diagnosticTokenReservation,
+  minimalClipOutputTokens,
+  validateMinimalClip,
 } = require('../apps/api/dist/selection/diagnostics');
 
 async function main() {
+  assert.ok(
+    !(
+      process.argv.includes('--live-simple') &&
+      process.argv.includes('--live-json')
+    ),
+  );
+  const jsonStage =
+    process.argv.includes('--json-preflight') ||
+    process.argv.includes('--live-json');
+  const stage = jsonStage ? 'minimalClip' : 'simple';
   const config = readSelectionConfig(process.env);
   assert.equal(config.provider, 'gemini');
   assert.equal(config.model, 'gemini-3.5-flash-lite');
@@ -56,23 +69,29 @@ async function main() {
     );
     const ledger = new PrismaUsageLedger(db);
     const before = await ledger.summary();
-    const reservationCheck = simpleDiagnosticReservation(
-      config,
-      before.committedTokens,
-      outputCap,
-    );
+    const reservationCheck = jsonStage
+      ? diagnosticTokenReservation(
+          config,
+          before.committedTokens,
+          Buffer.byteLength(JSON.stringify(payloads.minimalClip), 'utf8') + 64,
+          minimalClipOutputTokens,
+        )
+      : simpleDiagnosticReservation(config, before.committedTokens, outputCap);
     const report = {
       date: new Date().toISOString(),
       model: config.model,
       endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent`,
       preparedStages: Object.keys(payloads),
+      stage,
       before,
       tokenBudgets: {
         run: config.runTokenBudget,
         daily: config.dailyTokenBudget,
       },
       reservationCheck,
-      liveRequested: process.argv.includes('--live-simple'),
+      liveRequested:
+        process.argv.includes('--live-simple') ||
+        process.argv.includes('--live-json'),
       apiCalls: 0,
     };
     const save = () => {
@@ -102,15 +121,15 @@ async function main() {
       assert.equal(calls, 0, 'Uma única chamada; sem retries');
       assert.equal(String(url), report.endpoint);
       calls++;
-      return fetch(url, { ...init, body: JSON.stringify(payloads.simple) });
+      return fetch(url, { ...init, body: JSON.stringify(payloads[stage]) });
     });
     const key = createHash('sha256')
       .update(
         JSON.stringify([
-          before.day,
+          jsonStage ? 'one-shot' : before.day,
           config.model,
-          'progressive-simple-v1',
-          payloads.simple,
+          `progressive-${stage}-v1`,
+          payloads[stage],
         ]),
       )
       .digest('hex');
@@ -120,7 +139,7 @@ async function main() {
         sourceId: transcript.sourceId,
         operation: 'llm-diagnostic',
         status: 'PROCESSING',
-        payload: { stage: 'simple', model: config.model },
+        payload: { stage, model: config.model },
         autoRun: false,
       },
     });
@@ -151,6 +170,11 @@ async function main() {
       if (reserved) await ledger.settle(reservation, response);
       report.response = response;
       report.success = Boolean(response.content.trim());
+      if (jsonStage)
+        report.parsedClip = validateMinimalClip(
+          response.content,
+          request.segments[0],
+        );
       await db.task.update({
         where: { id: task.id },
         data: {
@@ -172,7 +196,9 @@ async function main() {
               message: error.message,
               body: error.diagnostic,
             }
-          : 'Falha local ou de transporte; detalhes não expostos';
+          : report.response
+            ? 'Resposta recebida, mas JSON ou timestamps não correspondem ao contrato mínimo'
+            : 'Falha local ou de transporte; detalhes não expostos';
       await db.task.update({
         where: { id: task.id },
         data: { status: 'FAILED', error: JSON.stringify(report.error) },
@@ -180,7 +206,7 @@ async function main() {
     }
     report.after = await ledger.summary();
     save();
-    // Nunca executar minimalSchema ou selection automaticamente.
+    // Nunca avançar para outro estágio. A chave JSON é única entre dias.
   } finally {
     await db.$disconnect();
   }

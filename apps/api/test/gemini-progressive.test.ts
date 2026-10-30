@@ -4,6 +4,9 @@ import {
   progressiveGeminiPayloads,
   simpleGeminiPayload,
   simpleDiagnosticReservation,
+  minimalClipPayload,
+  validateMinimalClip,
+  diagnosticTokenReservation,
 } from '../src/selection/diagnostics';
 import { makeRequest } from '../src/selection/service';
 import { readSelectionConfig } from '../src/selection/contracts';
@@ -11,6 +14,61 @@ import { readSelectionConfig } from '../src/selection/contracts';
 const config = readSelectionConfig({
   LLM_PROVIDER: 'gemini',
   LLM_MODEL: 'gemini-3.5-flash-lite',
+});
+test('JSON mínimo tem só título, tempos e três configurações necessárias', () => {
+  const segment = { id: 3, start: 1.5, end: 8.25, text: 'Uma frase completa.' };
+  const payload = minimalClipPayload(segment);
+  assert.deepEqual(Object.keys(payload).sort(), [
+    'contents',
+    'generationConfig',
+  ]);
+  assert.deepEqual(Object.keys(payload.generationConfig).sort(), [
+    'maxOutputTokens',
+    'responseJsonSchema',
+    'responseMimeType',
+  ]);
+  assert.equal(payload.generationConfig.maxOutputTokens, 256);
+  assert.deepEqual(payload.generationConfig.responseJsonSchema, {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      start: { type: 'number' },
+      end: { type: 'number' },
+    },
+    required: ['title', 'start', 'end'],
+  });
+  assert.deepEqual(
+    validateMinimalClip(
+      '{"title":"Uma ideia","start":1.5,"end":8.25}',
+      segment,
+    ),
+    { title: 'Uma ideia', start: 1.5, end: 8.25 },
+  );
+  for (const content of [
+    'texto',
+    '{"title":"","start":1.5,"end":8.25}',
+    '{"title":"Ideia","start":0,"end":8.25}',
+    '{"title":"Ideia","start":1.5,"end":8.25,"extra":true}',
+  ])
+    assert.throws(() => validateMinimalClip(content, segment));
+  assert.equal(
+    diagnosticTokenReservation(
+      config,
+      '0',
+      Buffer.byteLength(JSON.stringify(payload)) + 64,
+      256,
+    ).allowed,
+    true,
+  );
+  assert.equal(
+    diagnosticTokenReservation(
+      { ...config, dailyTokenBudget: 0 },
+      '0',
+      200,
+      256,
+    ).allowed,
+    false,
+  );
 });
 test('teto autorizado de 64 tokens é a única configuração do teste simples', () => {
   assert.deepEqual(simpleGeminiPayload(64), {
