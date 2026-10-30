@@ -121,7 +121,10 @@ node scripts/multiorigin-smoke.mjs
 O smoke usa `.env` sem imprimir credenciais e exige `LLM_PROVIDER=mock`. Utiliza
 `media/fixtures/e2e-authorized-20261028.mp4`, fala sintética autorizada existente.
 Se não houver essa fixture, gere uma nova com `scripts/create-fixture.ps1` e ajuste
-o caminho no script. Ele não baixa nem publica conteúdo de terceiros. Os relatórios
+`$env:MULTIORIGIN_FIXTURE_PATH='media/fixtures/nome-novo.mp4'` antes do smoke.
+Use uma fixture nova se o histórico já tiver esgotado os trechos elegíveis da antiga;
+o teste não remove cortes nem desativa a proteção contra duplicação.
+Ele não baixa nem publica conteúdo de terceiros. Os relatórios
 ficam em `artifacts/`, fora do Git. Consulte a validação da entrega para os testes
 online, reinícios e limitações efetivamente observadas.
 

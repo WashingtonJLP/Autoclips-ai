@@ -20,7 +20,7 @@ Para um teste sem mídia de terceiros:
 ```powershell
 $nome = 'dashboard-' + [guid]::NewGuid().ToString('N')
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-fixture.ps1 -Name $nome
-Write-Output "Caminho para o dashboard: fixtures/$nome.mp4"
+Write-Output "Arquivo para selecionar no upload: media/fixtures/$nome.mp4"
 ```
 
 1. Abra **Fontes → Cadastrar fonte**, nomeie o teste, use a URL do repositório como origem,
@@ -28,10 +28,16 @@ Write-Output "Caminho para o dashboard: fixtures/$nome.mp4"
    `https://github.com/WashingtonJLP/Autoclips-ai/blob/main/scripts/create-fixture.ps1`
    e créditos `Fala sintetizada localmente com System.Speech e imagem FFmpeg para teste autorizado`.
    Confirme a revisão dos direitos e salve.
-2. Abra **Criar cortes**, selecione essa fonte, informe o caminho exibido pelo
-   comando, mantenha **Transcrever e criar cortes** e **Concluir automaticamente**.
-3. Clique em **Iniciar produção**. Use **Atualizar** para acompanhar a transcrição,
-   seleção e renderização no painel de progresso. A seleção padrão continua mock.
+2. Abra **Criar cortes → Enviar arquivo**, selecione o MP4 gerado pelo seletor de
+   arquivos e escolha essa fonte autorizada. Não é necessário informar caminho interno.
+   Para mídia já enviada, use **Escolher vídeo** e selecione o item importado.
+3. Defina quantidade, idioma e duração; mantenha **Concluir automaticamente** e
+   clique em **Gerar cortes**. Confira o provedor exibido: o padrão do código é mock,
+   mas o ambiente local pode estar configurado para Gemini. Se quiser concluir sem IA
+   externa indisponível, abra **Critérios da seleção e fallback** e escolha
+   **Usar heurística local identificada**. Isso não realiza análise semântica por IA.
+   O fallback explícito também atende quota diária Gemini esgotada, sem enviar chamadas
+   nem modificar limites. Sem fallback, a quota continua interrompendo a seleção.
 4. Clique em **Ver resultado** ou abra **Biblioteca**. Abra a prévia do corte e
    use **Baixar MP4** / **Baixar SRT**.
    Revise a fala, tempos, título e descrição com atribuição.
@@ -43,8 +49,10 @@ Write-Output "Caminho para o dashboard: fixtures/$nome.mp4"
    tarefa/plataforma tem apenas um agendamento; repetir retorna o registro existente,
    sem alterar a data. Não existe remarcação nesta versão.
 
-Não há atualização periódica do dashboard. Continuar uma etapa pendente usa
-**Retomar fluxo automático**; erros de transcrição/seleção aparecem nas tarefas.
+Em **Criar cortes**, o progresso atualiza a cada cinco segundos enquanto houver
+trabalho ativo e a página estiver visível. Ao terminar, esse polling para.
+O fluxo normal continua automaticamente; **Retomar fluxo automático** é uma opção
+de recuperação. Erros de transcrição/seleção aparecem nas tarefas.
 Uma seleção sem candidatos não produz um vídeo arbitrário. Seleções com falha
 desconhecida não são repetidas automaticamente, para preservar o orçamento.
 

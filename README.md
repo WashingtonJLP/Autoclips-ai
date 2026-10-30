@@ -1,5 +1,7 @@
 # AutoClips AI
 
+[Verificação funcional final do MVP — resultados e pendências](docs/validacao-final-mvp.md).
+
 [Seleção inteligente com Gemini: configuração, critérios e validação pendente](docs/selecao-inteligente.md).
 
 O fluxo por link, upload, vídeos importados e monitoramento está descrito em

@@ -1,6 +1,10 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { SelectionConfig, SelectionError } from './contracts';
-import { llmResponseSchema, LlmResponse } from './provider';
+import {
+  llmResponseSchema,
+  LlmResponse,
+  LlmUnavailableError,
+} from './provider';
 import { Reservation, UsageLedger } from './service';
 
 export async function selectionTransaction<T>(
@@ -60,7 +64,7 @@ export class PrismaUsageLedger implements UsageLedger {
         (await tx.llmCall.count({ where: { day, provider: 'gemini' } })) >=
           config.geminiDailyRequestLimit
       )
-        throw new SelectionError(
+        throw new LlmUnavailableError(
           'Limite diário de requisições Gemini atingido; nenhuma chamada enviada',
         );
       const tokens = BigInt(r.inputTokens + r.outputTokens),

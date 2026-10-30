@@ -46,7 +46,10 @@ const source = await api('sources', {
     'Teste sintético autorizado, fala criada localmente e fundo FFmpeg. Sem mídia de terceiros.',
   commercialUseVerified: true,
 });
-const bytes = readFileSync('media/fixtures/e2e-authorized-20261028.mp4');
+const bytes = readFileSync(
+  process.env.MULTIORIGIN_FIXTURE_PATH ??
+    'media/fixtures/e2e-authorized-20261028.mp4',
+);
 const dashboardHeaders = {
   Authorization: `Basic ${Buffer.from(`${process.env.DASHBOARD_USER}:${process.env.DASHBOARD_PASSWORD}`).toString('base64')}`,
   'Content-Type': 'application/octet-stream',
