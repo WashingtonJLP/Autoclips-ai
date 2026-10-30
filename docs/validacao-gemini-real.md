@@ -145,3 +145,53 @@ Resultados verificados no ledger e nas tarefas:
 
 O relatório local é `artifacts/gemini-35-validation-failed.json`. O limite foi mantido,
 sem reset nem aumento, e o teste foi encerrado sem uma terceira tentativa.
+
+# Nova validação do schema corrigido — 30/10/2026 UTC
+
+O orçamento persistido foi consultado antes da execução: 0/2 no dia UTC
+2026-10-30. Os dois registros FAILED de 2026-10-29 permaneceram intactos.
+O ledger usa a data UTC; a renovação natural ocorreu às 21h de 29/10 em
+America/Sao_Paulo. Nenhum contador foi reiniciado ou alterado.
+
+A imagem da API foi reconstruída e somente esse serviço foi recriado para
+carregar a correção `73f06eb`. Conferimos o schema corrigido dentro do container,
+ausência de tarefas ativas e de automações habilitadas antes da execução.
+Foi reutilizada uma transcrição real faster-whisper já concluída da fixture
+autorizada `semantic-speech.mp4`, da outra fonte de teste existente, sem
+apagar ou repetir automaticamente a seleção anterior que falhou. O roteiro
+agora aceita `GEMINI_VALIDATION_TRANSCRIPT_ID` para selecionar explicitamente
+essa transcrição; o limite diário continua global ao provedor.
+
+Foi realizada **exatamente uma chamada nova** a `gemini-3.5-flash-lite`, sem
+retries e sem fallback. A seleção `cmvu7p6ea00003epq5cyabqw4` falhou com HTTP 400.
+O corpo completo sanitizado foi preservado em `LlmCall.response.httpError`:
+
+```json
+{
+  "error": {
+    "code": 400,
+    "message": "Request contains an invalid argument.",
+    "status": "INVALID_ARGUMENT"
+  }
+}
+```
+
+A resposta não contém `details`, `fieldViolations` ou outro identificador de
+parâmetro. Portanto, **não foi possível identificar exatamente o campo rejeitado**.
+O resultado demonstra que limitar os IDs do schema não foi suficiente para
+resolver o erro; não confirma a hipótese anterior como causa raiz. Não houve
+segunda chamada para testar outras variações de payload.
+
+Após a tentativa: **1/2** reservas Gemini no dia UTC 2026-10-30; os registros
+anteriores continuam presentes. Reserva conservadora de 6.905 tokens (3.905
+entrada estimada + 3.000 saída máxima), não consumo medido. A resposta de erro
+não informou tokens ou cobrança: campos de uso permanecem nulos. O custo
+reservado pela aplicação é zero; nível gratuito confirmado pelo operador,
+`LLM_ALLOW_PAID=false`, sem operação de ativação de faturamento.
+
+Nenhum corte, MP4 ou SRT novo foi gerado, pois não houve seleção estruturada
+válida. A identificação como IA na Biblioteca e o pipeline completo Gemini
+**continuam sem validação real bem-sucedida**. Lint e formatação do roteiro
+passaram. Relatório local detalhado em
+`artifacts/gemini-corrected-schema-validation.json` (ignorado pelo Git).
+Uma próxima chamada depende de nova autorização, apesar de restar uma reserva.

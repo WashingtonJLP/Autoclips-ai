@@ -16,6 +16,7 @@ const allowed = new Set([
   'DASHBOARD_PASSWORD',
 ]);
 const expectedModel = process.env.GEMINI_VALIDATION_MODEL ?? 'gemini-2.5-flash';
+const transcriptId = process.env.GEMINI_VALIDATION_TRANSCRIPT_ID;
 for (const line of readFileSync('.env', 'utf8').split(/\r?\n/)) {
   const m = line.match(/^([A-Z_][A-Z_0-9]*)=(.*)$/);
   if (m && allowed.has(m[1]) && !process.env[m[1]])
@@ -61,6 +62,7 @@ assert.ok(
 const transcript = (await api('jobs')).find(
   (t) =>
     t.operation === 'transcribe' &&
+    (!transcriptId || t.id === transcriptId) &&
     t.status === 'COMPLETED' &&
     t.payload.path === 'fixtures/semantic-speech.mp4' &&
     t.result?.transcription_engine === 'faster-whisper' &&
