@@ -46,6 +46,7 @@ export class LlmHttpError extends LlmUnavailableError {
     readonly status: number,
     readonly retryAfterMs = 0,
     detail?: string,
+    readonly diagnostic?: string,
   ) {
     super(
       `API de IA recusou a solicitação (${status})${detail ? `: ${detail}` : ''}`,
@@ -282,6 +283,17 @@ export class GeminiProvider implements LlmProvider {
   async generate(request: LlmRequest): Promise<LlmResponse> {
     const { $schema: _schema, ...schema } = responseFormat;
     void _schema;
+    // O Zod emite MAX_SAFE_INTEGER para int(): desnecessário e caro para a
+    // gramática restrita do Gemini. IDs válidos pertencem somente a este lote.
+    const geminiSchema = JSON.parse(JSON.stringify(schema));
+    const ids = request.segments.map((segment) => segment.id);
+    for (const field of ['first', 'last']) {
+      geminiSchema.properties.clips.items.properties[field] = {
+        type: 'integer',
+        minimum: ids.length ? Math.min(...ids) : 0,
+        maximum: ids.length ? Math.max(...ids) : 0,
+      };
+    }
     const response = await this.transport(
       `https://generativelanguage.googleapis.com/v1beta/models/${request.model}:generateContent`,
       {
@@ -310,7 +322,7 @@ export class GeminiProvider implements LlmProvider {
             temperature: 0,
             maxOutputTokens: request.maxOutputTokens,
             responseMimeType: 'application/json',
-            responseJsonSchema: schema,
+            responseJsonSchema: geminiSchema,
             ...(/^gemini-2\.5-flash/.test(request.model)
               ? { thinkingConfig: { thinkingBudget: 0 } }
               : {}),
@@ -326,13 +338,32 @@ export class GeminiProvider implements LlmProvider {
           ? Math.max(0, Date.parse(retry) - Date.now())
           : seconds * 1000;
       let detail: string | undefined;
+      let diagnostic: string | undefined;
       try {
-        const error = JSON.parse(await boundedResponse(response));
-        if (typeof error.error?.message === 'string')
-          detail = error.error.message
+        const raw = await boundedResponse(response);
+        const redact = (text: string) =>
+          text
             .split(this.env.GEMINI_API_KEY!)
             .join('[chave oculta]')
-            .slice(0, 500);
+            .replace(/AIza[\w-]+/g, '[chave oculta]')
+            .replace(/Bearer\s+[\w.+/=-]+/gi, 'Bearer [oculto]');
+        try {
+          diagnostic = JSON.stringify(JSON.parse(raw), (key, value) =>
+            /^(authorization|cookie|set-cookie|.*api[_-]?key|.*token|password|secret)$/i.test(
+              key,
+            )
+              ? '[oculto]'
+              : typeof value === 'string'
+                ? redact(value)
+                : value,
+          );
+        } catch {
+          // Texto arbitrário pode ecoar cabeçalhos/credenciais; não persistir.
+          diagnostic = '[corpo não JSON omitido]';
+        }
+        const error = JSON.parse(diagnostic!);
+        if (typeof error.error?.message === 'string')
+          detail = error.error.message.slice(0, 500);
       } catch {
         /* O status continua disponível mesmo sem corpo JSON válido. */
       }
@@ -340,6 +371,7 @@ export class GeminiProvider implements LlmProvider {
         response.status,
         Number.isFinite(delay) ? Math.min(30000, delay) : 0,
         detail,
+        diagnostic,
       );
     }
     const raw = await boundedResponse(response);

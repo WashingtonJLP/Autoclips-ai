@@ -38,7 +38,7 @@ export interface UsageLedger {
     config: SelectionConfig,
   ): Promise<{ cached?: LlmResponse }>;
   settle(reservation: Reservation, response: LlmResponse): Promise<void>;
-  fail(reservation: Reservation): Promise<void>;
+  fail(reservation: Reservation, diagnostic?: string): Promise<void>;
 }
 export type Interval = { start: number; end: number };
 const instructions =
@@ -326,7 +326,10 @@ export class SelectionService {
             await this.provider.generate(requests[i]),
           );
         } catch (error) {
-          await this.ledger.fail(reservation);
+          await this.ledger.fail(
+            reservation,
+            error instanceof LlmHttpError ? error.diagnostic : undefined,
+          );
           consumption.push({
             state: 'FAILED',
             error:

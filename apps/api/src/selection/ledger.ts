@@ -133,10 +133,13 @@ export class PrismaUsageLedger implements UsageLedger {
       });
     });
   }
-  async fail(r: Reservation): Promise<void> {
+  async fail(r: Reservation, diagnostic?: string): Promise<void> {
     await this.db.llmCall.updateMany({
       where: { key: r.key, state: 'RESERVED' },
-      data: { state: 'FAILED' },
+      data: {
+        state: 'FAILED',
+        ...(diagnostic ? { response: { httpError: diagnostic } } : {}),
+      },
     });
     // Não liberar: a inferência pode ter sido realizada antes da falha de rede.
   }
