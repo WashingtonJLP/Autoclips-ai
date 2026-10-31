@@ -6,16 +6,16 @@ continuam acessíveis somente na rede Docker. Publicação permanece simulada.
 
 ## Suporte implementado
 
-| Origem                                       | Descoberta/metadados                                                                                  | Obtenção do original                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| YouTube                                      | oEmbed por link; busca e duração com `YOUTUBE_API_KEY`                                                | Original autorizado por HTTPS, arquivo já importado ou upload; sem download pela Data API                          |
-| Twitch                                       | VODs/clips por Helix, com `TWITCH_CLIENT_ID` e `TWITCH_ACCESS_TOKEN`; monitoramento de VODs por canal | Clips via Get Clips Download com escopo/papel permitido; VODs exigem original; validação real do download pendente |
-| Vimeo                                        | oEmbed; metadados e `download` com `VIMEO_ACCESS_TOKEN`                                               | MP4 disponibilizado pela API oficial; validação real do download pendente; upload como alternativa                 |
-| Wikimedia Commons                            | API oficial; licença, autoria, evidência, hash e duração quando disponíveis                           | Arquivo original público CC0/CC BY 4.0, após confirmação dos direitos                                              |
-| Catálogo autorizado                          | Manifestos já configurados em `SOURCE_MANIFEST_URLS`                                                  | Links diretos do manifesto, com evidência e hosts aprovados                                                        |
-| RSS / podcasts                               | Feeds RSS 2.0 configurados em `SOURCE_FEED_URLS`, com enclosures                                      | HTTPS público em host aprovado, após autorização individual; áudio recebe fundo vertical gerado                    |
-| Arquivo direto / armazenamento compartilhado | Identificação do link; duração validada ao importar                                                   | HTTPS público, após permissão específica ou licença registrada; sem cadastro obrigatório de host                   |
-| Upload local                                 | SHA-256, duração e validação FFprobe                                                                  | Envio binário até 512 MB, sem caminhos internos                                                                    |
+| Origem                                       | Descoberta/metadados                                                                                  | Obtenção do original                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| YouTube                                      | oEmbed por link; busca e duração com `YOUTUBE_API_KEY`                                                | Cópia licenciada única do Commons com origem exata, original HTTPS vinculado, arquivo importado ou upload; sem download pela Data API |
+| Twitch                                       | VODs/clips por Helix, com `TWITCH_CLIENT_ID` e `TWITCH_ACCESS_TOKEN`; monitoramento de VODs por canal | Clips via Get Clips Download com escopo/papel permitido; VODs exigem original; validação real do download pendente                    |
+| Vimeo                                        | oEmbed; metadados e `download` com `VIMEO_ACCESS_TOKEN`                                               | MP4 disponibilizado pela API oficial; validação real do download pendente; upload como alternativa                                    |
+| Wikimedia Commons                            | API oficial; licença, autoria, evidência, hash e duração quando disponíveis                           | Arquivo original público CC0/CC BY 4.0, após confirmação dos direitos                                                                 |
+| Catálogo autorizado                          | Manifestos já configurados em `SOURCE_MANIFEST_URLS`                                                  | Links diretos do manifesto, com evidência e hosts aprovados                                                                           |
+| RSS / podcasts                               | Feeds RSS 2.0 configurados em `SOURCE_FEED_URLS`, com enclosures                                      | HTTPS público em host aprovado, após autorização individual; áudio recebe fundo vertical gerado                                       |
+| Arquivo direto / armazenamento compartilhado | Identificação do link; duração validada ao importar                                                   | HTTPS público, após permissão específica ou licença registrada; sem cadastro obrigatório de host                                      |
+| Upload local                                 | SHA-256, duração e validação FFprobe                                                                  | Envio binário até 512 MB, sem caminhos internos                                                                                       |
 
 Os conectores distinguem identidade, metadados, direitos confirmados e disponibilidade
 do arquivo. O simples fato de encontrar uma URL nunca aprova sua reutilização.
@@ -28,8 +28,9 @@ direitos de terceiros. Os créditos acompanham a descrição dos cortes.
 ## Pelo dashboard
 
 1. Abra **Criar cortes** e escolha **Colar link**, **Escolher vídeo** ou **Enviar arquivo**.
-   Para links, clique **Analisar vídeo** e confira título, canal, duração e miniatura quando
-   disponíveis. O cartão distingue metadados, importação e arquivo já importado; sem acesso,
+   Para links, **Gerar cortes** analisa e inicia a importação na mesma ação quando possível.
+   **Analisar vídeo** é opcional para conferir os metadados antes. O cartão distingue
+   metadados, importação e arquivo já importado; sem acesso,
    oferece **Enviar o original autorizado** em vez de iniciar uma produção bloqueada.
 2. Permissões existentes e licenças de catálogo são reutilizadas automaticamente.
    Se faltar autorização, confirme que possui direitos para aquela mídia. Não há seleção

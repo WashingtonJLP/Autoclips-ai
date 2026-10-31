@@ -14,6 +14,9 @@ esse token no servidor. Não há gestão multiusuário.
   Clips Twitch e vídeos Vimeo podem retornar arquivo obtido pelas APIs oficiais,
   dependendo de token/papel/permissões. Isso não confirma direitos de reutilização.
   Veja [importação por URL](../importacao-url.md) para motores e validação real.
+  YouTube procura uma cópia licenciada única no Commons com ID exato no campo de origem;
+  retorna a versão e evidência em `metadata.catalog`/`metadata.acquisition`, sem pedir
+  vínculo manual nesse caso. Ambiguidade/indisponibilidade não concedem acesso.
   Twitch sem credenciais retorna identificação limitada e `upload_required`, sem erro técnico
   na criação. Busca/monitoramento continuam reportando sua configuração administrativa.
 - `POST /media/:id/original`: associa original externo HTTPS (`mediaUrl`) ou arquivo já

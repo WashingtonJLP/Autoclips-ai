@@ -6,14 +6,14 @@ ou chamada LLM externa foi feita nestes testes.
 
 ## Modalidades disponíveis
 
-| Entrada                                                  | Obtenção implementada                                                             | Validação nesta entrega                                                                                             |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| HTTPS direto MP4/WebM/MOV/OGV                            | Download após licença ou declaração específica; reutiliza arquivo importado       | E2E real com motores nativo e yt-dlp                                                                                |
-| YouTube watch/shorts/youtu.be                            | Metadados; original externo autorizado ou arquivo já importado associado ao vídeo | Metadados reais e bloqueio correto sem original; associação coberta por regressão                                   |
-| Twitch VOD `/videos/ID`                                  | Metadados Helix com credenciais; original por upload                              | Sem credenciais neste ambiente; nenhum extrator de VOD                                                              |
-| Twitch clip `clips.twitch.tv/SLUG` ou `/canal/clip/SLUG` | `Get Clips` + `Get Clips Download` oficiais, quando o token/papel permitir        | Contrato, escopos, recusas e identidade testados com transporte simulado; download real Twitch pendente             |
-| Vimeo `/ID`                                              | `download` da API oficial, limitado a MP4 progressivo até 512 MB/2 h              | Metadados públicos reais; contrato de arquivo oficial testado com transporte simulado; download real Vimeo pendente |
-| Upload / vídeo já importado                              | Fluxo existente, sem fonte ou caminho interno                                     | E2E real com mídia própria, incluindo deduplicação e Biblioteca                                                     |
+| Entrada                                                  | Obtenção implementada                                                                                   | Validação nesta entrega                                                                                             |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| HTTPS direto MP4/WebM/MOV/OGV                            | Download após licença ou declaração específica; reutiliza arquivo importado                             | E2E real com motores nativo e yt-dlp                                                                                |
+| YouTube watch/shorts/youtu.be                            | Descoberta automática de cópia licenciada com ID exato no Commons; original externo e cache preservados | E2E real YouTube → cópia CC BY 4.0 descoberta automaticamente → MP4/SRT; veja o relatório YouTube                   |
+| Twitch VOD `/videos/ID`                                  | Metadados Helix com credenciais; original por upload                                                    | Sem credenciais neste ambiente; nenhum extrator de VOD                                                              |
+| Twitch clip `clips.twitch.tv/SLUG` ou `/canal/clip/SLUG` | `Get Clips` + `Get Clips Download` oficiais, quando o token/papel permitir                              | Contrato, escopos, recusas e identidade testados com transporte simulado; download real Twitch pendente             |
+| Vimeo `/ID`                                              | `download` da API oficial, limitado a MP4 progressivo até 512 MB/2 h                                    | Metadados públicos reais; contrato de arquivo oficial testado com transporte simulado; download real Vimeo pendente |
+| Upload / vídeo já importado                              | Fluxo existente, sem fonte ou caminho interno                                                           | E2E real com mídia própria, incluindo deduplicação e Biblioteca                                                     |
 
 Uma licença ou declaração de copyright não substitui o acesso permitido pela plataforma.
 O yt-dlp tem extratores tecnicamente compatíveis com essas plataformas, mas isso
@@ -93,9 +93,10 @@ O script não altera configuração e recusa execução se o provedor não for m
 
 ## Pela interface
 
-1. Abra **Criar cortes**, cole a URL e clique **Analisar vídeo**.
-2. Havendo arquivo permitido, confirme direitos somente se solicitado e clique
-   **Gerar cortes**. Não é necessário cadastrar fonte nem informar caminhos.
+1. Abra **Criar cortes**, cole a URL e clique **Gerar cortes**. A análise é automática;
+   **Analisar vídeo** continua opcional.
+2. Havendo arquivo permitido, o fluxo continua; confirme direitos somente se solicitado.
+   Não é necessário cadastrar fonte nem informar caminhos.
 3. Acompanhe as etapas e abra **Biblioteca** para assistir/baixar MP4 e SRT.
    Sem acesso ao arquivo, use o original autorizado indicado na mensagem.
 

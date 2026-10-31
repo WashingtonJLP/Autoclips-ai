@@ -102,6 +102,7 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   for (const field of [
     'name="url"',
     'Analisar vídeo',
+    'Gerar cortes',
     'Colar link',
     'Escolher vídeo',
     'Enviar arquivo',
@@ -116,6 +117,8 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   ])
     assert.ok(!html.includes(field));
   assert.ok(html.includes('continuam automaticamente'));
+  assert.match(html, /type="button"[^>]*>Analisar vídeo/);
+  assert.match(html, /type="submit"[^>]*>Gerar cortes/);
   assert.match(html, /value="heuristic" selected/);
   assert.ok(
     !html.includes('type="file"'),
