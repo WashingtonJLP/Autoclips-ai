@@ -58,7 +58,7 @@ test('análise reutiliza original importado antes de consultar a plataforma', as
   );
 });
 
-test('YouTube apresenta miniatura e mensagem curta sem sugerir extração nem expor configuração', async () => {
+test('YouTube apresenta metadados e oferece tentativa direta sem exigir Creative Commons', async () => {
   const original = globalThis.fetch,
     key = process.env.YOUTUBE_API_KEY;
   try {
@@ -77,9 +77,17 @@ test('YouTube apresenta miniatura e mensagem curta sem sugerir extração nem ex
     assert.equal(result.title, 'Meu vídeo');
     assert.equal(result.author, 'Meu canal');
     assert.ok(result.thumbnailUrl);
-    assert.equal(result.availability.kind, 'upload_required');
+    assert.equal(result.availability.kind, 'permission_required');
     assert.ok(!result.reason?.includes('YOUTUBE_API_KEY'));
-    assert.match(result.availability.message, /original autorizado/);
+    assert.match(result.availability.message, /direitos/);
+    assert.equal(
+      result.mediaUrl,
+      'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    );
+    assert.equal(
+      (result.metadata.acquisition as { method: string }).method,
+      'youtube-direct',
+    );
   } finally {
     globalThis.fetch = original;
     if (key === undefined) delete process.env.YOUTUBE_API_KEY;

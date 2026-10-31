@@ -3,7 +3,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { Discovery, Discovered } from './discovery';
+import { Discovery } from './discovery';
 import { youtubeHosts, youtubeVideoId } from './youtube-url';
 
 export type Candidate = {
@@ -70,12 +70,6 @@ export function identityForUrl(value: string) {
     platform = 'vimeo';
     id = url.pathname.match(/(?:\/video)?\/(\d+)$/)?.[1] ?? '';
     if (!id) return;
-  } else if (url.hostname === 'commons.wikimedia.org') {
-    platform = 'commons';
-    id = decodeURIComponent(url.pathname.replace(/^\/wiki\//, '')).replaceAll(
-      '_',
-      ' ',
-    );
   } else if (!/\.(mp4|webm|ogv|mov|mp3|wav|m4a)$/i.test(url.pathname)) return;
   return hash([platform, id]);
 }
@@ -150,7 +144,6 @@ function blocked(
 }
 export class YouTubeConnector implements Connector {
   readonly platform = 'youtube';
-  constructor(private readonly discovery = new Discovery()) {}
   matches(u: URL) {
     return youtubeHosts.has(u.hostname);
   }
@@ -163,72 +156,54 @@ export class YouTubeConnector implements Connector {
       id,
       `https://www.youtube.com/watch?v=${id}`,
     );
+    item.accessible = true;
+    item.mediaUrl = item.url;
     item.reason =
-      'Reconhecemos o vídeo do YouTube, mas esta integração não fornece o arquivo original. Envie o original autorizado para criar os cortes.';
-    if (process.env.YOUTUBE_API_KEY) {
-      const url = new URL('https://www.googleapis.com/youtube/v3/videos');
-      url.search = new URLSearchParams({
-        part: 'snippet,contentDetails,status',
-        id,
-        key: process.env.YOUTUBE_API_KEY,
-      }).toString();
-      const video = (await json(url)).items?.[0];
-      if (!video)
-        throw new BadRequestException('Vídeo não encontrado ou não disponível');
-      Object.assign(item, {
-        title: video.snippet.title,
-        author: video.snippet.channelTitle,
-        language: video.snippet.defaultAudioLanguage,
-        publishedAt: video.snippet.publishedAt,
-        duration: isoDuration(video.contentDetails.duration),
-        metadata: {
-          license: video.status.license,
-          thumbnailUrl: thumbnailUrl(
-            video.snippet.thumbnails?.high?.url ??
-              video.snippet.thumbnails?.default?.url,
-          ),
-        },
-      });
-    } else {
-      const url = new URL('https://www.youtube.com/oembed');
-      url.searchParams.set('url', item.url);
-      url.searchParams.set('format', 'json');
-      const data = await json(url);
-      Object.assign(item, {
-        title: data.title,
-        author: data.author_name,
-        metadata: { thumbnailUrl: thumbnailUrl(data.thumbnail_url) },
-      });
-    }
+      'Importação direta será tentada após confirmar autorização. Metadados não comprovam download; restrições de acesso serão respeitadas.';
+    item.metadata = { acquisition: { method: 'youtube-direct' } };
     try {
-      const original = await this.discovery.youtubeOriginal(id);
-      item.metadata.originalDiscovery = original.status;
-      if (original.candidate) {
-        const catalog = original.candidate;
-        item.metadata.youtubeMetadata = {
-          title: item.title,
-          author: item.author,
-          duration: item.duration,
-        };
-        item.metadata.catalog = catalog;
-        item.metadata.acquisition = {
-          method: 'commons-youtube',
-          youtubeId: id,
-          versionTitle: catalog.name,
-          evidenceUrl: catalog.evidenceUrl,
-        };
-        // A cópia licenciada pode ser uma versão/excerto, não a íntegra do YouTube.
-        item.title = `${item.title} — versão licenciada: ${catalog.name.replace(/^File:/, '')}`;
-        item.duration = catalog.evidence.duration as number;
-        item.mediaUrl = catalog.mediaUrl;
-        item.accessible = true;
-        item.reason =
-          'Versão licenciada correspondente encontrada no Wikimedia Commons. Importação automática disponível com créditos e licença registrados.';
+      if (process.env.YOUTUBE_API_KEY) {
+        const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+        url.search = new URLSearchParams({
+          part: 'snippet,contentDetails,status',
+          id,
+          key: process.env.YOUTUBE_API_KEY,
+        }).toString();
+        const video = (await json(url)).items?.[0];
+        if (!video)
+          throw new BadRequestException(
+            'Vídeo não encontrado ou não disponível',
+          );
+        Object.assign(item, {
+          title: video.snippet.title,
+          author: video.snippet.channelTitle,
+          language: video.snippet.defaultAudioLanguage,
+          publishedAt: video.snippet.publishedAt,
+          duration: isoDuration(video.contentDetails.duration),
+          metadata: {
+            license: video.status.license,
+            thumbnailUrl: thumbnailUrl(
+              video.snippet.thumbnails?.high?.url ??
+                video.snippet.thumbnails?.default?.url,
+            ),
+          },
+        });
+      } else {
+        const url = new URL('https://www.youtube.com/oembed');
+        url.searchParams.set('url', item.url);
+        url.searchParams.set('format', 'json');
+        const data = await json(url);
+        Object.assign(item, {
+          title: data.title,
+          author: data.author_name,
+          metadata: { thumbnailUrl: thumbnailUrl(data.thumbnail_url) },
+        });
       }
     } catch {
-      item.metadata.originalDiscovery = 'unavailable';
-      // Falha do catálogo não é ausência comprovada de original nem autoriza extração.
+      // Metadados opcionais não impedem o extrator de tentar obter a mídia autorizada.
+      item.metadata.metadataUnavailable = true;
     }
+    item.metadata.acquisition = { method: 'youtube-direct' };
     return item;
   }
   async search(query: string, limit: number, channel?: string) {
@@ -488,40 +463,6 @@ export class TwitchConnector implements Connector {
     return items;
   }
 }
-export class CommonsConnector implements Connector {
-  readonly platform = 'commons';
-  constructor(private readonly discovery = new Discovery()) {}
-  matches(u: URL) {
-    return u.hostname === 'commons.wikimedia.org';
-  }
-  private candidate(item: Discovered): Candidate {
-    return {
-      ...blocked(this.platform, item.reference, item.url),
-      title: item.name,
-      author: item.attribution,
-      duration:
-        typeof item.evidence.duration === 'number'
-          ? item.evidence.duration
-          : undefined,
-      mediaUrl: item.mediaUrl,
-      accessible: true,
-      metadata: { catalog: item },
-    };
-  }
-  async resolve(u: URL) {
-    const title = decodeURIComponent(u.pathname.replace(/^\/wiki\//, ''));
-    if (!title.startsWith('File:'))
-      throw new BadRequestException(
-        'Informe a página File: do Wikimedia Commons',
-      );
-    return this.candidate(await this.discovery.resolve('commons', title));
-  }
-  async search(query: string, limit: number) {
-    return (await this.discovery.search('commons', query))
-      .slice(0, limit)
-      .map((v) => this.candidate(v));
-  }
-}
 export class ManifestConnector implements Connector {
   readonly platform = 'manifest';
   constructor(private readonly discovery = new Discovery()) {}
@@ -574,7 +515,6 @@ export class Connectors {
     new YouTubeConnector(),
     new TwitchConnector(),
     new VimeoConnector(),
-    new CommonsConnector(),
     new ManifestConnector(),
     new DirectConnector(),
     new FeedConnector(),

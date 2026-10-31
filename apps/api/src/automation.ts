@@ -9,7 +9,7 @@ import { Candidate, hash } from './connectors';
 export const searchConfig = z
   .object({
     platforms: z
-      .array(z.enum(['youtube', 'twitch', 'commons', 'manifest', 'rss']))
+      .array(z.enum(['youtube', 'twitch', 'manifest', 'rss']))
       .min(1)
       .max(5),
     keywords: z.string().trim().min(1).max(200),
@@ -54,8 +54,13 @@ export class Automations {
     id: string;
     enabled: boolean;
     intervalMinutes: number;
+    config?: unknown;
   }) {
-    if (!item.enabled) {
+    if (
+      !item.enabled ||
+      (item.config !== undefined &&
+        !searchConfig.safeParse(item.config).success)
+    ) {
       await this.p.queue.removeJobScheduler(`search-${item.id}`);
       return;
     }
@@ -165,7 +170,16 @@ export class Automations {
       where: { id },
     });
     if (!item.enabled) return { paused: true };
-    const config = parse(searchConfig, item.config);
+    const parsed = searchConfig.safeParse(item.config);
+    if (!parsed.success) {
+      await this.p.queue.removeJobScheduler(`search-${item.id}`);
+      return {
+        unavailable: true,
+        reason:
+          'Configuração histórica com conector descontinuado; histórico preservado.',
+      };
+    }
+    const config = parsed.data;
     const run = await this.p.db.searchRun.create({
       data: { automationId: id },
     });

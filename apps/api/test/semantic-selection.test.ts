@@ -304,7 +304,7 @@ test('busca temática encaminha critérios e fallback somente para candidatos el
     id: 'topic',
     enabled: true,
     config: {
-      platforms: ['commons'],
+      platforms: ['manifest'],
       keywords: 'ciência',
       autoProcess: true,
       options: {

@@ -51,7 +51,6 @@ export function MediaAnalysis({
             twitch: 'Twitch',
             vimeo: 'Vimeo',
             direct: 'Arquivo direto',
-            commons: 'Wikimedia Commons',
             upload: 'Arquivo enviado',
           } as Record<string, string>
         )[asset.platform] ?? asset.platform}
@@ -69,7 +68,9 @@ export function MediaAnalysis({
             ? asset.platform === 'youtube'
               ? 'Apenas metadados · vincule um original autorizado'
               : 'Apenas metadados · envio do original necessário'
-            : 'Importação disponível'}
+            : asset.platform === 'youtube'
+              ? 'Importação direta pendente de validação'
+              : 'Importação disponível'}
       </strong>
       <p role="status">
         {asset.availability?.message ??
@@ -138,26 +139,28 @@ export default function ProductionForm({
       .catch(() => {});
     return () => controller.abort();
   }, [initialAsset]);
-  async function start(asset: Asset, request: Request) {
-    if (!asset.rightsConfirmed) {
-      const response = await fetch('/api/backend/productions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-      const data = await response.json();
-      if (data.code === 'AUTHORIZATION_REQUIRED') {
-        setPending(request);
-        return;
-      }
-      if (!response.ok)
-        throw new Error(
-          typeof data.message === 'string'
-            ? data.message
-            : 'Confira a mídia e tente novamente.',
-        );
-      onCreated(data);
-    } else onCreated(await api<Task>('productions', request));
+  async function start(request: Request) {
+    const response = await fetch('/api/backend/productions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    const data = await response.json();
+    if (
+      ['AUTHORIZATION_REQUIRED', 'DOWNLOAD_AUTHORIZATION_REQUIRED'].includes(
+        data.code,
+      )
+    ) {
+      setPending(request);
+      return;
+    }
+    if (!response.ok)
+      throw new Error(
+        typeof data.message === 'string'
+          ? data.message
+          : 'Confira a mídia e tente novamente.',
+      );
+    onCreated(data);
   }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -207,7 +210,7 @@ export default function ProductionForm({
       const criteria = form.getAll('criteria');
       if (!criteria.length)
         throw new Error('Escolha pelo menos um critério de seleção.');
-      await start(asset, {
+      await start({
         assetId: asset.id,
         autoRun: true,
         reprocess: form.get('reprocess') === 'on',
@@ -277,22 +280,10 @@ export default function ProductionForm({
                 }}
               />
               <small>
-                Cole o link para conferir os dados e saber se podemos importar o
-                vídeo.
+                Cole o link do YouTube, Twitch, Vimeo ou de um arquivo HTTPS
+                autorizado.
               </small>
             </label>
-            <button
-              className="button secondary"
-              disabled={action.busy}
-              type="button"
-              onClick={() => void action.run(analyze, 'Análise atualizada.')}
-            >
-              {action.busy
-                ? 'Analisando…'
-                : inspected
-                  ? 'Analisar novamente'
-                  : 'Analisar vídeo'}
-            </button>
           </div>
         )}
         {mode === 'upload' && (
@@ -375,15 +366,14 @@ export default function ProductionForm({
         )}
         {mode === 'link' &&
           inspected?.platform === 'youtube' &&
-          inspected.availability?.kind === 'upload_required' && (
+          !inspected.path && (
             <details className="advanced">
               <summary>Usar um original autorizado sem novo upload</summary>
               <p>
-                O YouTube não fornece um link de download pela Data API. Se o
-                titular disponibilizou o original fora da plataforma, vincule
-                esse arquivo. Você também pode reutilizar um vídeo já importado.
-                Esta associação é uma declaração sua, não uma verificação
-                automática de identidade.
+                Se a importação direta não estiver permitida ou disponível, você
+                pode vincular um arquivo autorizado fornecido pelo titular ou
+                reutilizar um vídeo já importado. Esta associação é uma
+                declaração sua, não uma verificação automática de identidade.
               </p>
               <label>
                 Link HTTPS do original fornecido pelo titular
@@ -564,6 +554,13 @@ export default function ProductionForm({
             de republicação. A declaração será registrada apenas para esta
             mídia.
           </p>
+          {inspected?.platform === 'youtube' && !inspected.path && (
+            <p>
+              Também confirmo que o download direto é permitido pela plataforma
+              para este vídeo. Ser público ou ter licença de reutilização não
+              basta. O sistema respeitará bloqueios de acesso.
+            </p>
+          )}
           <button
             className="button primary"
             type="button"
@@ -573,6 +570,7 @@ export default function ProductionForm({
                 const task = await api<Task>('productions', {
                   ...pending,
                   confirmPermission: true,
+                  confirmDownloadPermission: true,
                 });
                 setPending(null);
                 onCreated(task);

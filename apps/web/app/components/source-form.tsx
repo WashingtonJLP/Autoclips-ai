@@ -80,7 +80,6 @@ export default function SourceForm({ onSaved }: { onSaved: () => void }) {
             <option value="twitch">Twitch</option>
             <option value="rss">RSS / podcast</option>
             <option value="manifest">Catálogo autorizado</option>
-            <option value="commons">Wikimedia</option>
           </select>
         </label>
         <label>

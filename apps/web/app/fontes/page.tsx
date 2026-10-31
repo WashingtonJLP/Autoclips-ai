@@ -28,7 +28,7 @@ export default function Sources() {
     [query, setQuery] = useState(''),
     [license, setLicense] = useState(''),
     [page, setPage] = useState(1),
-    [connector, setConnector] = useState('commons'),
+    [connector, setConnector] = useState('manifest'),
     [candidates, setCandidates] = useState<Candidate[] | null>(null),
     [reviewed, setReviewed] = useState<Record<string, boolean>>({}),
     [saved, setSaved] = useState('');
@@ -249,7 +249,6 @@ export default function Sources() {
                     setReviewed({});
                   }}
                 >
-                  <option value="commons">Wikimedia Commons</option>
                   <option value="manifest">Catálogo autorizado</option>
                 </select>
               </label>

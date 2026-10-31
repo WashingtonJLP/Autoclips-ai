@@ -75,6 +75,7 @@ export const productionRequest = z
     reprocess: z.boolean().default(false),
     confirmCatalogRights: z.boolean().default(false),
     confirmPermission: z.boolean().default(false),
+    confirmDownloadPermission: z.boolean().default(false),
     authorization: sourceSchema.omit({ name: true, url: true }).optional(),
     options: productionOptions.default({
       maxClips: 3,
@@ -99,7 +100,6 @@ export function describeMedia<
     metadataUnavailable?: boolean;
     authorizedOriginal?: { method?: string };
     acquisition?: { method?: string };
-    originalDiscovery?: string;
   };
   const kind = asset.path
     ? 'imported'
@@ -112,21 +112,15 @@ export function describeMedia<
     kind === 'imported'
       ? 'O arquivo já está importado. Vamos reutilizá-lo, sem baixar novamente.'
       : kind === 'available'
-        ? metadata.acquisition?.method === 'commons-youtube'
-          ? 'Encontramos uma versão licenciada deste vídeo no Wikimedia Commons. Vamos importar o arquivo dessa versão e registrar licença e créditos automaticamente.'
-          : metadata.authorizedOriginal?.method === 'rights-holder-url'
-            ? 'Original externo autorizado vinculado. Vamos importar desse endereço, sem extrair mídia do YouTube.'
-            : 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
+        ? 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
         : kind === 'permission_required'
-          ? 'O arquivo pode ser importado. Se não houver permissão registrada, confirme que possui os direitos para este vídeo.'
+          ? asset.platform === 'youtube'
+            ? 'Vamos tentar a importação direta após confirmar os direitos e a permissão de download. A obtenção do arquivo ainda será validada.'
+            : 'O arquivo pode ser importado. Se não houver permissão registrada, confirme que possui os direitos para este vídeo.'
           : asset.platform === 'twitch' && metadata.metadataUnavailable
             ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
             : asset.platform === 'youtube'
-              ? metadata.originalDiscovery === 'ambiguous'
-                ? 'Encontramos várias versões possíveis. Para usar a versão correta, vincule o original autorizado deste vídeo.'
-                : metadata.originalDiscovery === 'unavailable'
-                  ? 'Não foi possível consultar o catálogo de originais licenciados agora. Tente analisar novamente ou vincule um original autorizado.'
-                  : 'Não encontramos um arquivo autorizado correspondente. Vincule um original por HTTPS, escolha um arquivo já importado ou envie o original autorizado. A Data API do YouTube não fornece o arquivo.'
+              ? 'Não foi possível obter a mídia diretamente do YouTube. Envie o original autorizado ou vincule um arquivo disponível.'
               : asset.platform === 'twitch'
                 ? 'O arquivo não está disponível com o acesso atual à Twitch. Use um clip com permissão oficial de download ou envie o original autorizado.'
                 : asset.platform === 'vimeo'
@@ -341,6 +335,33 @@ export class Production {
           where: { url: asset.url, commercialUseVerified: true },
         });
     if (source && !source.commercialUseVerified) source = null;
+    const directYouTube =
+      asset.platform === 'youtube' &&
+      !asset.path &&
+      !(asset.metadata as { authorizedOriginal?: unknown })
+        .authorizedOriginal &&
+      (asset.metadata as { acquisition?: { method?: string } }).acquisition
+        ?.method === 'youtube-direct';
+    // Uma autorização histórica de outra versão não autoriza o original inteiro.
+    // A nova declaração recebe fonte própria, preservando a evidência das produções antigas.
+    if (
+      directYouTube &&
+      source &&
+      !(source.evidence as { downloadPermissionConfirmedAt?: string } | null)
+        ?.downloadPermissionConfirmedAt
+    )
+      source = null;
+    if (
+      directYouTube &&
+      !request.confirmDownloadPermission &&
+      !(source?.evidence as { downloadPermissionConfirmedAt?: string } | null)
+        ?.downloadPermissionConfirmedAt
+    )
+      throw new BadRequestException({
+        code: 'DOWNLOAD_AUTHORIZATION_REQUIRED',
+        message:
+          'Confirme que tem permissão para baixar este vídeo diretamente do YouTube e processá-lo. Disponibilidade pública e licença de reutilização não comprovam permissão de download.',
+      });
     if (
       !source &&
       (request.authorization ||
@@ -377,16 +398,21 @@ export class Production {
           ...rights,
         });
         source = await this.p.db.source.upsert({
-          where: { connectorKey: `authorization-${asset.identity}` },
+          where: {
+            connectorKey: `${directYouTube ? 'youtube-direct-authorization' : 'authorization'}-${asset.identity}`,
+          },
           update: {},
           create: {
             ...data,
             purpose: 'media',
             verifiedAt: new Date(),
-            connectorKey: `authorization-${asset.identity}`,
+            connectorKey: `${directYouTube ? 'youtube-direct-authorization' : 'authorization'}-${asset.identity}`,
             mediaUrl: asset.mediaUrl,
             evidence: {
               confirmedAt: new Date().toISOString(),
+              ...(directYouTube && request.confirmDownloadPermission
+                ? { downloadPermissionConfirmedAt: new Date().toISOString() }
+                : {}),
               metadata: asset.metadata,
               method: request.authorization
                 ? 'documented-authorization'
@@ -421,6 +447,16 @@ export class Production {
       throw new BadRequestException(
         'A autorização informada pertence a outro vídeo. Use a autorização desta mídia.',
       );
+    if (directYouTube && request.confirmDownloadPermission)
+      await this.p.db.source.update({
+        where: { id: source.id },
+        data: {
+          evidence: {
+            ...((source.evidence as Prisma.InputJsonObject) ?? {}),
+            downloadPermissionConfirmedAt: new Date().toISOString(),
+          },
+        },
+      });
     await this.p.db.mediaAsset.update({
       where: { id: asset.id },
       data: { sourceId: source.id, rightsConfirmed: true },
@@ -472,8 +508,9 @@ export class Production {
           : {
               url: asset.mediaUrl!,
               key: hash(asset.identity),
-              engine:
-                process.env.MEDIA_DOWNLOAD_ENGINE === 'yt-dlp'
+              engine: directYouTube
+                ? 'youtube'
+                : process.env.MEDIA_DOWNLOAD_ENGINE === 'yt-dlp'
                   ? 'yt-dlp'
                   : 'native',
               ...(['vimeo-official', 'twitch-clips-official'].includes(
@@ -491,13 +528,6 @@ export class Production {
                 (asset.metadata as { authorizedOriginal?: { method?: string } })
                   .authorizedOriginal?.method === 'rights-holder-url')
                 ? { public_file_authorized: true }
-                : {}),
-              ...((asset.platform === 'commons' ||
-                (asset.platform === 'youtube' &&
-                  (asset.metadata as { acquisition?: { method?: string } })
-                    .acquisition?.method === 'commons-youtube')) &&
-              catalog?.evidence?.sha1
-                ? { expected_sha1: catalog.evidence.sha1 }
                 : {}),
             },
         editorial: {
@@ -587,8 +617,6 @@ export function sameResource(a: string, b: string) {
     const u = normalizedUrl(value);
     const id = youtubeVideoId(u);
     if (id) return `youtube:${id}`;
-    if (u.hostname === 'commons.wikimedia.org')
-      return `commons:${decodeURIComponent(u.pathname).replaceAll('_', ' ')}`;
     return u.href;
   };
   try {

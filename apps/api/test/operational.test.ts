@@ -8,7 +8,7 @@ import {
   SelectionService,
   UsageLedger,
 } from '../src/selection/service';
-import { commonsCandidate, Discovery } from '../src/discovery';
+import { Discovery } from '../src/discovery';
 import {
   encryptTokens,
   decryptTokens,
@@ -79,53 +79,6 @@ test('adaptador OpenAI envia schema/limites e contabiliza consumo sem rede', asy
     calls,
     1,
     'Orçamento zero deve bloquear a segunda chamada antes do transporte',
-  );
-});
-const page = (license: string, restrictions = '') => ({
-  title: 'File:Example.webm',
-  imageinfo: [
-    {
-      url: 'https://upload.wikimedia.org/example.webm',
-      descriptionurl: 'https://commons.wikimedia.org/wiki/File:Example.webm',
-      mime: 'video/webm',
-      size: 100,
-      timestamp: '2026-10-28T00:00:00Z',
-      sha1: 'abc',
-      extmetadata: {
-        LicenseUrl: { value: license },
-        Artist: { value: '<a>Autor</a>' },
-        Restrictions: { value: restrictions },
-        CommonsMetadataExtension: { value: 1.2 },
-      },
-    },
-  ],
-});
-test('coleta aceita apenas licença explícita, vídeo e host oficial e conserva evidência', () => {
-  const candidate = commonsCandidate(
-    page('https://creativecommons.org/licenses/by/4.0/'),
-  );
-  assert.equal(candidate?.license, 'CC-BY-4.0');
-  assert.match(candidate!.attribution, /Autor/);
-  assert.equal(candidate!.evidence.sha1, 'abc');
-  assert.equal(
-    commonsCandidate(
-      page('http://creativecommons.org/publicdomain/zero/1.0/deed.en'),
-    )?.license,
-    'CC0',
-  );
-  assert.equal(
-    commonsCandidate(page('https://creativecommons.org/licenses/by-nc/4.0/')),
-    null,
-  );
-  assert.equal(
-    commonsCandidate(page('https://creativecommons.org/licenses/by-sa/4.0/')),
-    null,
-  );
-  assert.equal(
-    commonsCandidate(
-      page('https://creativecommons.org/publicdomain/zero/1.0/', 'personality'),
-    ),
-    null,
   );
 });
 test('manifesto autorizado descobre permissão expressa e rejeita referências externas', async () => {

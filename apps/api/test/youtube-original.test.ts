@@ -6,8 +6,37 @@ import { Pipeline } from '../src/pipeline';
 import { hash } from '../src/connectors';
 import { MockLlmProvider } from '../src/selection/provider';
 import { readSelectionConfig } from '../src/selection/contracts';
+import { youtubeVideoId } from '../src/youtube-url';
+import { identityForUrl } from '../src/connectors';
 
-function setup() {
+test('variantes YouTube compartilham identidade e arquivo histórico sem consultar rede', async () => {
+  const ctx = setup();
+  const cached = ctx.rows.get('youtube')!;
+  cached.path = 'downloads/historical.webm';
+  cached.metadata = { historical: true };
+  ctx.production.connectors.resolve = async () => {
+    throw Error('Não consultar rede');
+  };
+  for (const url of [
+    'https://youtube.com/watch?v=ACtest00001&t=20',
+    'https://youtu.be/ACtest00001?si=x',
+    'https://youtube.com/shorts/ACtest00001/',
+    'https://youtube.com/embed/ACtest00001',
+    'https://m.youtube.com/watch?v=ACtest00001',
+    'https://music.youtube.com/watch?v=ACtest00001',
+    'https://www.youtube-nocookie.com/embed/ACtest00001',
+    'https://youtube.com/live/ACtest00001',
+    'https://youtube.com/v/ACtest00001',
+  ]) {
+    assert.equal(youtubeVideoId(new URL(url)), 'ACtest00001');
+    assert.equal(identityForUrl(url), cached.identity);
+    const result = await ctx.production.inspect({ url });
+    assert.equal(result.path, 'downloads/historical.webm');
+    assert.deepEqual(result.metadata, { historical: true });
+  }
+});
+
+function setup(direct = false, legacySource = false) {
   const youtube = {
     id: 'youtube',
     platform: 'youtube',
@@ -15,10 +44,10 @@ function setup() {
     url: 'https://www.youtube.com/watch?v=ACtest00001',
     title: 'Referência de teste',
     author: 'Titular',
-    metadata: {},
+    metadata: direct ? { acquisition: { method: 'youtube-direct' } } : {},
     path: null,
-    mediaUrl: null,
-    accessible: false,
+    mediaUrl: direct ? 'https://www.youtube.com/watch?v=ACtest00001' : null,
+    accessible: direct,
     rightsConfirmed: false,
   };
   const rows = new Map<string, Record<string, unknown>>([
@@ -37,7 +66,16 @@ function setup() {
       },
     ],
   ]);
-  let source: Record<string, unknown> | null = null,
+  let source: Record<string, unknown> | null = legacySource
+      ? {
+          id: 'legacy-source',
+          url: youtube.url,
+          commercialUseVerified: true,
+          license: 'CC0',
+          evidence: { method: 'catalog-license' },
+          connectorKey: `authorization-${youtube.identity}`,
+        }
+      : null,
     payload: Record<string, unknown> | undefined;
   const tx = {
     mediaAsset: {
@@ -74,13 +112,18 @@ function setup() {
         create: Record<string, unknown>;
         update: Record<string, unknown>;
       }) => {
-        source = source
-          ? { ...source, ...update }
-          : { id: 'youtube-permission', ...create };
+        source =
+          source && source.connectorKey === create.connectorKey
+            ? { ...source, ...update }
+            : { id: 'youtube-permission', ...create };
         return source;
       },
       findUnique: async () => source,
       findFirst: async () => source,
+      update: async ({ data }: { data: Record<string, unknown> }) => {
+        source = { ...source, ...data };
+        return source;
+      },
     },
     task: {
       findFirst: async () => null,
@@ -113,6 +156,61 @@ function setup() {
     },
   };
 }
+
+test('YouTube direto exige permissão de download separada dos direitos e enfileira o extrator', async () => {
+  const ctx = setup(true);
+  await assert.rejects(
+    () => ctx.production.start({ assetId: 'youtube', confirmPermission: true }),
+    /permissão para baixar/,
+  );
+  assert.equal(ctx.source, null);
+  await ctx.production.start({
+    assetId: 'youtube',
+    confirmPermission: true,
+    confirmDownloadPermission: true,
+  });
+  assert.equal(ctx.payload?.engine, 'youtube');
+  assert.equal(ctx.payload?.url, 'https://www.youtube.com/watch?v=ACtest00001');
+  assert.ok(
+    (ctx.source?.evidence as { downloadPermissionConfirmedAt: string })
+      .downloadPermissionConfirmedAt,
+  );
+  await ctx.production.start({ assetId: 'youtube' });
+  assert.equal(ctx.payload?.engine, 'youtube');
+});
+
+test('alternativa de original vinculado prevalece sobre metadados do extrator', async () => {
+  const ctx = setup(true);
+  await ctx.production.linkOriginal('youtube', {
+    mediaUrl: 'https://holder.example/own.mp4',
+    confirmPermission: true,
+  });
+  await ctx.production.start({ assetId: 'youtube' });
+  assert.equal(ctx.payload?.engine, 'native');
+  assert.equal(ctx.payload?.url, 'https://holder.example/own.mp4');
+});
+
+test('declaração direta não herda nem sobrescreve licença de versão histórica', async () => {
+  const ctx = setup(true, true);
+  const historical = ctx.source;
+  await assert.rejects(
+    () =>
+      ctx.production.start({
+        assetId: 'youtube',
+        confirmDownloadPermission: true,
+      }),
+    /Confirme/,
+  );
+  assert.equal(ctx.source, historical);
+  await ctx.production.start({
+    assetId: 'youtube',
+    confirmDownloadPermission: true,
+    confirmPermission: true,
+  });
+  assert.equal(ctx.source?.license, 'PERMISSION');
+  assert.notEqual(ctx.source?.id, historical?.id);
+  assert.equal(historical?.license, 'CC0');
+});
 
 test('original externo exige declaração específica e utiliza downloader existente, sem extrair YouTube', async () => {
   const ctx = setup();

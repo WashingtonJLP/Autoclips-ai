@@ -641,9 +641,6 @@ export class PipelineController {
         payload: {
           url: item.mediaUrl,
           key: item.connectorKey,
-          ...(connector === 'commons'
-            ? { expected_sha1: item.evidence.sha1 as string }
-            : {}),
         },
         renderKey: `download-${item.connectorKey}`,
         autoRun,

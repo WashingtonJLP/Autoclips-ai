@@ -1,4 +1,4 @@
-"""Motor yt-dlp restrito a um arquivo autorizado, sem extratores de páginas."""
+"""Processo isolado: downloader de arquivo autorizado ou extrator YouTube dedicado."""
 
 import json
 import sys
@@ -90,7 +90,13 @@ def run(request, output):
 if __name__ == "__main__":
     try:
         payload = json.load(sys.stdin)
-        run(DownloadRequest.model_validate(payload["request"]), payload["output"])
+        request = DownloadRequest.model_validate(payload["request"])
+        if request.engine == "youtube":
+            from app.youtube import run as youtube_run
+
+            youtube_run(request, payload["output"])
+        else:
+            run(request, payload["output"])
     except HTTPException as exc:
         # Apenas um código conhecido retorna ao processo pai; nunca URL assinada.
         print(json.dumps({"error": exc.status_code}))

@@ -101,7 +101,6 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   assert.equal(matchesTask(task, [source], 'não existe'), false);
   for (const field of [
     'name="url"',
-    'Analisar vídeo',
     'Gerar cortes',
     'Colar link',
     'Escolher vídeo',
@@ -117,7 +116,10 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   ])
     assert.ok(!html.includes(field));
   assert.ok(html.includes('continuam automaticamente'));
-  assert.match(html, /type="button"[^>]*>Analisar vídeo/);
+  assert.ok(
+    !html.includes('Analisar vídeo'),
+    'A geração analisa a URL automaticamente',
+  );
   assert.match(html, /type="submit"[^>]*>Gerar cortes/);
   assert.match(html, /value="heuristic" selected/);
   assert.ok(

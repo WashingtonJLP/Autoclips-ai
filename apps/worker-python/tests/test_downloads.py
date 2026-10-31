@@ -14,10 +14,10 @@ def test_download_rejects_unapproved_and_private_hosts(monkeypatch):
     with pytest.raises(HTTPException):
         validate_url("https://localhost/test.mp4")
     with pytest.raises(HTTPException):
-        validate_url("http://upload.wikimedia.org/test.mp4")
+        validate_url("http://example.org/test.mp4")
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("127.0.0.1", 443))])
     with pytest.raises(HTTPException):
-        validate_url("https://upload.wikimedia.org/test.mp4")
+        validate_url("https://example.org/test.mp4")
     with pytest.raises(HTTPException):
         NoRedirect().redirect_request(None, None, 302, "", {}, "https://evil.invalid")
 
@@ -51,9 +51,7 @@ def test_download_streams_atomically_and_reuses_file(tmp_path, monkeypatch):
             return Response()
 
     monkeypatch.setattr(downloads.urllib.request, "build_opener", lambda *args: Opener())
-    request = DownloadRequest(
-        url="https://upload.wikimedia.org/test.mp4", key="ab" * 32, rights=RIGHTS
-    )
+    request = DownloadRequest(url="https://example.org/test.mp4", key="ab" * 32, rights=RIGHTS)
     result = download(request)
     assert (tmp_path / result["path"]).read_bytes() == b"test"
     assert len(result["sha256"]) == 64
@@ -84,12 +82,20 @@ def test_worker_auth_and_artifact_scope(tmp_path, monkeypatch):
 
 
 def test_authorized_public_file_keeps_network_and_https_guards(monkeypatch):
-    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))])
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))]
+    )
     assert validate_url("https://example.org/own.mp4", True) == "93.184.216.34"
     for address in ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1"]:
-        monkeypatch.setattr(socket, "getaddrinfo", lambda *a, ip=address, **kw: [(0, 0, 0, "", (ip, 443))])
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *a, ip=address, **kw: [(0, 0, 0, "", (ip, 443))]
+        )
         with pytest.raises(HTTPException):
             validate_url("https://example.org/own.mp4", True)
-    for url in ["http://example.org/a.mp4", "https://user:password@example.org/a.mp4", "https://example.org:8443/a.mp4"]:
+    for url in [
+        "http://example.org/a.mp4",
+        "https://user:password@example.org/a.mp4",
+        "https://example.org:8443/a.mp4",
+    ]:
         with pytest.raises(HTTPException):
             validate_url(url, True)

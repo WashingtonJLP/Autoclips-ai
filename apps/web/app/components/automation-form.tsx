@@ -216,7 +216,6 @@ export default function AutomationForm() {
           {[
             ['youtube', 'YouTube'],
             ['twitch', 'Twitch'],
-            ['commons', 'Wikimedia'],
             ['manifest', 'Catálogo autorizado'],
             ['rss', 'RSS / podcasts'],
           ].map(([value, label]) => (
@@ -225,7 +224,7 @@ export default function AutomationForm() {
                 name="platforms"
                 type="checkbox"
                 value={value}
-                defaultChecked={value === 'commons'}
+                defaultChecked={value === 'youtube'}
               />
               {label}
             </label>

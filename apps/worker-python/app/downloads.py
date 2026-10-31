@@ -1,4 +1,4 @@
-"""Download direto e limitado de hosts aprovados, sem extratores de plataformas."""
+"""Download limitado de arquivos autorizados e entrada para o extrator YouTube."""
 
 import hashlib
 import http.client
@@ -32,16 +32,14 @@ class DownloadRequest(BaseModel):
     rights: Rights
     expected_sha1: str | None = Field(default=None, pattern=r"^[a-f0-9]{40}$")
     public_file_authorized: bool = False
-    engine: Literal["native", "yt-dlp"] = "native"
+    engine: Literal["native", "yt-dlp", "youtube"] = "native"
     file_extension: Literal["mp4", "webm", "mov", "ogv"] | None = None
     official_redirects: bool = False
 
 
 def validate_url(url: str, public_file_authorized: bool = False):
     parsed = urlsplit(url)
-    allowed = {"upload.wikimedia.org"} | set(
-        filter(None, os.getenv("MEDIA_DOWNLOAD_HOSTS", "").split(","))
-    )
+    allowed = set(filter(None, os.getenv("MEDIA_DOWNLOAD_HOSTS", "").split(",")))
     if (
         parsed.scheme != "https"
         or (parsed.hostname not in allowed and not public_file_authorized)
@@ -95,11 +93,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def download(request: DownloadRequest) -> dict:
     url = str(request.url)
-    address = validate_url(url, request.public_file_authorized)
+    if request.engine == "youtube":
+        from app.youtube import canonical_url
+
+        url = canonical_url(url)
+    address = (
+        None if request.engine == "youtube" else validate_url(url, request.public_file_authorized)
+    )
     extension = (
-        f".{request.file_extension}"
-        if request.file_extension
-        else Path(urlsplit(url).path).suffix.lower()
+        ".mp4"
+        if request.engine == "youtube"
+        else (
+            f".{request.file_extension}"
+            if request.file_extension
+            else Path(urlsplit(url).path).suffix.lower()
+        )
     )
     if extension not in {".mp4", ".webm", ".ogv", ".mov", ".mp3", ".wav", ".m4a"}:
         raise HTTPException(400, "Formato de download não permitido")
@@ -121,7 +129,7 @@ def download(request: DownloadRequest) -> dict:
         with target.open("rb") as existing:
             digest = hashlib.file_digest(existing, "sha256").hexdigest()
         return {"path": relative(target), "sha256": digest}
-    if request.engine == "yt-dlp":
+    if request.engine in {"yt-dlp", "youtube"}:
         return download_with_ytdlp(request, target)
     temporary = directory / f".{request.key}.{uuid4().hex}.part"
     limit = 512 * 1024**2
@@ -195,7 +203,7 @@ def public_response(url, authorized, redirects=False, *, address=None):
 
 def download_with_ytdlp(request, target):
     # Processo isolado para impor prazo total mesmo durante DNS/socket/biblioteca.
-    # Não executa extratores, FFmpeg externo, cookies ou configurações de usuário.
+    # O filho escolhe arquivo direto ou YouTube; não carrega cookies/configurações de usuário.
     with tempfile.TemporaryDirectory(prefix=".authorized-", dir=target.parent) as directory:
         temporary = Path(directory) / target.name
         try:
@@ -216,6 +224,10 @@ def download_with_ytdlp(request, target):
                     except (ValueError, AttributeError):
                         status = None
                     messages = {
+                        403: "O YouTube restringiu o acesso. Não contornamos autenticação, DRM ou controles; envie o original autorizado.",
+                        404: "Vídeo indisponível ou removido do YouTube.",
+                        422: "O YouTube não disponibilizou formatos públicos compatíveis sem restrições.",
+                        429: "O YouTube limitou as requisições. Tente mais tarde.",
                         400: "Este endereço não permite importação segura. Use outro original autorizado.",
                         413: "Download excede 512 MB. Envie uma versão menor do original autorizado.",
                         504: "Tempo de download excedido. Tente novamente ou envie o original autorizado.",

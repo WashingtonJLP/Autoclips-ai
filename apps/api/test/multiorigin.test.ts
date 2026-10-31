@@ -40,7 +40,7 @@ test('políticas limitam frequência, quantidade, duração e plataformas', () =
       name: 'Teste',
       kind: 'topic',
       intervalMinutes: 1,
-      config: { platforms: ['commons'], keywords: 'ciência' },
+      config: { platforms: ['youtube'], keywords: 'ciência' },
     }),
   );
   assert.throws(() =>
@@ -56,13 +56,6 @@ test('autorização compara o mesmo vídeo sem confundir canais ou outros arquiv
     sameResource(
       'https://youtu.be/abcdefghijk?t=30',
       'https://www.youtube.com/watch?v=abcdefghijk',
-    ),
-    true,
-  );
-  assert.equal(
-    sameResource(
-      'https://commons.wikimedia.org/wiki/File:Meu_video.webm',
-      'https://commons.wikimedia.org/wiki/File:Meu%20video.webm',
     ),
     true,
   );
