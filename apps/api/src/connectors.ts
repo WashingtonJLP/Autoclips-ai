@@ -37,9 +37,12 @@ export function thumbnailUrl(value: unknown): string | undefined {
       url.protocol === 'https:' &&
       !url.username &&
       !url.password &&
-      ['i.ytimg.com', 'static-cdn.jtvnw.net', 'i.vimeocdn.com'].includes(
-        url.hostname,
-      )
+      [
+        'i.ytimg.com',
+        'static-cdn.jtvnw.net',
+        'clips-media-assets.twitch.tv',
+        'i.vimeocdn.com',
+      ].includes(url.hostname)
     )
       return url.href;
   } catch {
@@ -63,9 +66,11 @@ export function identityForUrl(value: string) {
           url.pathname.match(/^\/(?:shorts|embed)\/([^/]+)$/)?.[1] ??
           '');
     if (!/^[\w-]{11}$/.test(id)) return;
-  } else if (['twitch.tv', 'www.twitch.tv'].includes(url.hostname)) {
+  } else if (
+    ['twitch.tv', 'www.twitch.tv', 'clips.twitch.tv'].includes(url.hostname)
+  ) {
     platform = 'twitch';
-    id = url.pathname.match(/^\/videos\/(\d+)$/)?.[1] ?? '';
+    id = twitchId(url) ?? '';
     if (!id) return;
   } else if (
     ['vimeo.com', 'www.vimeo.com', 'player.vimeo.com'].includes(url.hostname)
@@ -245,6 +250,29 @@ export function isoDuration(v: string) {
     ? Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0)
     : undefined;
 }
+function officialFile(value: unknown): string | undefined {
+  if (typeof value !== 'string') return;
+  try {
+    // Preserva assinaturas/query exatamente como fornecidas pela API oficial.
+    const url = new URL(value);
+    if (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      (!url.port || url.port === '443')
+    )
+      return value;
+  } catch {
+    /* O worker também verifica DNS/IP, TLS, bytes e mídia real. */
+  }
+}
+function twitchId(url: URL): string | undefined {
+  const clip =
+    url.hostname === 'clips.twitch.tv'
+      ? url.pathname.match(/^\/([\w-]+)$/)?.[1]
+      : url.pathname.match(/^\/[\w]+\/clip\/([\w-]+)$/)?.[1];
+  return clip ? `clip:${clip}` : url.pathname.match(/^\/videos\/(\d+)$/)?.[1];
+}
 export class VimeoConnector implements Connector {
   readonly platform = 'vimeo';
   matches(u: URL) {
@@ -256,6 +284,50 @@ export class VimeoConnector implements Connector {
     const id = u.pathname.match(/(?:\/video)?\/(\d+)$/)?.[1];
     if (!id) throw new BadRequestException('Informe um link de vídeo Vimeo');
     const item = blocked(this.platform, id, `https://vimeo.com/${id}`);
+    if (process.env.VIMEO_ACCESS_TOKEN) {
+      try {
+        const data = await json(
+          `https://api.vimeo.com/videos/${id}?fields=name,user.name,duration,pictures.sizes,download`,
+          {
+            Authorization: `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
+          },
+        );
+        const file = (data.download ?? [])
+          .filter(
+            (f: { type?: string; link?: string; size?: number }) =>
+              f.type === 'video/mp4' &&
+              officialFile(f.link) &&
+              typeof f.size === 'number' &&
+              f.size > 0 &&
+              f.size <= 512 * 1024 ** 2,
+          )
+          .sort(
+            (a: { size: number }, b: { size: number }) => a.size - b.size,
+          )[0];
+        const mediaUrl =
+          file && data.duration > 0 && data.duration <= 7200
+            ? officialFile(file.link)
+            : undefined;
+        return {
+          ...item,
+          title: data.name,
+          author: data.user?.name,
+          duration: data.duration,
+          ...(mediaUrl ? { mediaUrl, accessible: true } : {}),
+          reason: mediaUrl
+            ? 'Arquivo disponibilizado pela API Vimeo; confirme os direitos de reutilização se solicitado.'
+            : 'O Vimeo não disponibilizou um arquivo para download com esta autorização. Envie o original autorizado.',
+          metadata: {
+            thumbnailUrl: thumbnailUrl(data.pictures?.sizes?.at(-1)?.link),
+            ...(mediaUrl
+              ? { acquisition: { method: 'vimeo-official', extension: 'mp4' } }
+              : {}),
+          },
+        };
+      } catch {
+        // Credenciais insuficientes não devem impedir o fallback de metadados públicos.
+      }
+    }
     const url = new URL('https://vimeo.com/api/oembed.json');
     url.searchParams.set('url', item.url);
     const data = await json(url);
@@ -278,15 +350,23 @@ export class VimeoConnector implements Connector {
 export class TwitchConnector implements Connector {
   readonly platform = 'twitch';
   matches(u: URL) {
-    return ['twitch.tv', 'www.twitch.tv'].includes(u.hostname);
+    return ['twitch.tv', 'www.twitch.tv', 'clips.twitch.tv'].includes(
+      u.hostname,
+    );
   }
   async resolve(u: URL) {
-    const id = u.pathname.match(/^\/videos\/(\d+)$/)?.[1];
-    if (!id) throw new BadRequestException('Informe um link de VOD da Twitch');
+    const id = twitchId(u);
+    if (!id)
+      throw new BadRequestException(
+        'Informe um link de vídeo ou clip da Twitch',
+      );
+    const clipId = id.startsWith('clip:') ? id.slice(5) : undefined;
     const item = blocked(
       this.platform,
       id,
-      `https://www.twitch.tv/videos/${id}`,
+      clipId
+        ? `https://clips.twitch.tv/${clipId}`
+        : `https://www.twitch.tv/videos/${id}`,
       `Vídeo da Twitch ${id}`,
     );
     item.reason =
@@ -298,9 +378,61 @@ export class TwitchConnector implements Connector {
           'A conexão com a Twitch ainda não está configurada. Você pode continuar enviando o original autorizado.',
         metadata: { metadataUnavailable: true },
       };
-    const data = await this.request(`videos?id=${id}`);
+    const data = await this.request(
+      clipId ? `clips?id=${encodeURIComponent(clipId)}` : `videos?id=${id}`,
+    );
     const video = data.data?.[0];
-    if (!video) throw new BadRequestException('VOD não encontrado');
+    if (!video) throw new BadRequestException('Vídeo ou clip não encontrado');
+    if (clipId) {
+      Object.assign(item, {
+        title: video.title,
+        author: video.broadcaster_name,
+        language: video.language,
+        duration: video.duration,
+        publishedAt: video.created_at,
+        reason:
+          'O download deste clip exige autorização oficial do broadcaster ou editor. Envie o original autorizado se não houver acesso.',
+        metadata: { thumbnailUrl: thumbnailUrl(video.thumbnail_url) },
+      });
+      try {
+        const token = await json('https://id.twitch.tv/oauth2/validate', {
+          Authorization: `OAuth ${process.env.TWITCH_ACCESS_TOKEN}`,
+        });
+        if (
+          token.client_id !== process.env.TWITCH_CLIENT_ID ||
+          !token.user_id ||
+          !token.scopes?.some((s: string) =>
+            ['editor:manage:clips', 'channel:manage:clips'].includes(s),
+          )
+        )
+          return item;
+        const query = new URLSearchParams({
+          broadcaster_id: video.broadcaster_id,
+          editor_id: token.user_id,
+          clip_id: clipId,
+        });
+        const files = await this.request(`clips/downloads?${query}`);
+        const file = files.data?.find(
+          (f: { clip_id: string }) => f.clip_id === clipId,
+        );
+        const mediaUrl = officialFile(
+          file?.landscape_download_url ?? file?.portrait_download_url,
+        );
+        if (mediaUrl && video.duration > 0 && video.duration <= 7200) {
+          item.mediaUrl = mediaUrl;
+          item.accessible = true;
+          item.reason =
+            'Arquivo disponibilizado pela API Twitch; confirme os direitos de reutilização se solicitado.';
+          item.metadata.acquisition = {
+            method: 'twitch-clips-official',
+            extension: 'mp4',
+          };
+        }
+      } catch {
+        // Sem papel/escopo oficial não há extração alternativa de playlists.
+      }
+      return item;
+    }
     return {
       ...item,
       title: video.title,

@@ -118,7 +118,11 @@ export function describeMedia<
             ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
             : asset.platform === 'youtube'
               ? 'O YouTube fornece os metadados, mas a Data API não entrega o arquivo. Vincule um original autorizado por HTTPS, escolha um arquivo já importado ou envie o original.'
-              : `Podemos identificar o vídeo, mas a integração ${asset.platform === 'youtube' ? 'YouTube' : asset.platform === 'twitch' ? 'Twitch' : asset.platform === 'vimeo' ? 'Vimeo' : 'desta plataforma'} não fornece o arquivo original. Envie o original autorizado para criar os cortes.`;
+              : asset.platform === 'twitch'
+                ? 'O arquivo não está disponível com o acesso atual à Twitch. Use um clip com permissão oficial de download ou envie o original autorizado.'
+                : asset.platform === 'vimeo'
+                  ? 'O Vimeo não disponibilizou um arquivo com as permissões atuais. Revise a conexão ou envie o original autorizado.'
+                  : 'O arquivo não está disponível nesta integração. Envie o arquivo original autorizado para criar os cortes.';
   return {
     ...asset,
     thumbnailUrl: thumbnailUrl(metadata.thumbnailUrl),
@@ -170,6 +174,9 @@ export class Production {
           duration: data.duration,
           metadata: data.metadata,
           reason: data.reason,
+          ...(!existing?.path && !original
+            ? { mediaUrl: data.mediaUrl ?? null, accessible: data.accessible }
+            : {}),
           ...(source
             ? {
                 sourceId: source.id,
@@ -456,6 +463,20 @@ export class Production {
           : {
               url: asset.mediaUrl!,
               key: hash(asset.identity),
+              engine:
+                process.env.MEDIA_DOWNLOAD_ENGINE === 'yt-dlp'
+                  ? 'yt-dlp'
+                  : 'native',
+              ...(['vimeo-official', 'twitch-clips-official'].includes(
+                (asset.metadata as { acquisition?: { method?: string } })
+                  .acquisition?.method ?? '',
+              )
+                ? {
+                    public_file_authorized: true,
+                    file_extension: 'mp4',
+                    official_redirects: true,
+                  }
+                : {}),
               ...(asset.platform === 'direct' ||
               (asset.platform === 'youtube' &&
                 (asset.metadata as { authorizedOriginal?: { method?: string } })

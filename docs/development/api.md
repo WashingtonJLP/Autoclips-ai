@@ -11,6 +11,9 @@ esse token no servidor. Não há gestão multiusuário.
   Retorna `thumbnailUrl` validada e `availability: {kind, message}`. Estados: `imported`,
   `available`, `permission_required`, `upload_required`. Primeiro reutiliza arquivos
   conhecidos pela identidade normalizada; não consulta novamente a plataforma nesse caso.
+  Clips Twitch e vídeos Vimeo podem retornar arquivo obtido pelas APIs oficiais,
+  dependendo de token/papel/permissões. Isso não confirma direitos de reutilização.
+  Veja [importação por URL](../importacao-url.md) para motores e validação real.
   Twitch sem credenciais retorna identificação limitada e `upload_required`, sem erro técnico
   na criação. Busca/monitoramento continuam reportando sua configuração administrativa.
 - `POST /media/:id/original`: associa original externo HTTPS (`mediaUrl`) ou arquivo já

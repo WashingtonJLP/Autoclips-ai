@@ -1,5 +1,7 @@
 # AutoClips AI
 
+[Importação automática por URL: yt-dlp autorizado, APIs oficiais e testes](docs/importacao-url.md).
+
 [YouTube: métodos autorizados de obtenção do original e teste real](docs/youtube-obtencao-autorizada.md).
 
 [Criação simplificada e Biblioteca: funcionamento, exclusão e validação](docs/criacao-simplificada.md).

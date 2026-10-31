@@ -6,19 +6,21 @@ continuam acessíveis somente na rede Docker. Publicação permanece simulada.
 
 ## Suporte implementado
 
-| Origem                                       | Descoberta/metadados                                                                                    | Obtenção do original                                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| YouTube                                      | oEmbed por link; busca e duração com `YOUTUBE_API_KEY`                                                  | Upload do original autorizado. Não há extrator nem download pela Data API                        |
-| Twitch                                       | VODs e monitoramento por ID numérico de canal via Helix, com `TWITCH_CLIENT_ID` e `TWITCH_ACCESS_TOKEN` | Upload do original autorizado; nenhum extrator de VOD                                            |
-| Vimeo                                        | Metadados oEmbed por link, incluindo duração                                                            | Upload do original autorizado; busca global e download autenticado ainda não implementados       |
-| Wikimedia Commons                            | API oficial; licença, autoria, evidência, hash e duração quando disponíveis                             | Arquivo original público CC0/CC BY 4.0, após confirmação dos direitos                            |
-| Catálogo autorizado                          | Manifestos já configurados em `SOURCE_MANIFEST_URLS`                                                    | Links diretos do manifesto, com evidência e hosts aprovados                                      |
-| RSS / podcasts                               | Feeds RSS 2.0 configurados em `SOURCE_FEED_URLS`, com enclosures                                        | HTTPS público em host aprovado, após autorização individual; áudio recebe fundo vertical gerado  |
-| Arquivo direto / armazenamento compartilhado | Identificação do link; duração validada ao importar                                                     | HTTPS público, após permissão específica ou licença registrada; sem cadastro obrigatório de host |
-| Upload local                                 | SHA-256, duração e validação FFprobe                                                                    | Envio binário até 512 MB, sem caminhos internos                                                  |
+| Origem                                       | Descoberta/metadados                                                                                  | Obtenção do original                                                                                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| YouTube                                      | oEmbed por link; busca e duração com `YOUTUBE_API_KEY`                                                | Original autorizado por HTTPS, arquivo já importado ou upload; sem download pela Data API                          |
+| Twitch                                       | VODs/clips por Helix, com `TWITCH_CLIENT_ID` e `TWITCH_ACCESS_TOKEN`; monitoramento de VODs por canal | Clips via Get Clips Download com escopo/papel permitido; VODs exigem original; validação real do download pendente |
+| Vimeo                                        | oEmbed; metadados e `download` com `VIMEO_ACCESS_TOKEN`                                               | MP4 disponibilizado pela API oficial; validação real do download pendente; upload como alternativa                 |
+| Wikimedia Commons                            | API oficial; licença, autoria, evidência, hash e duração quando disponíveis                           | Arquivo original público CC0/CC BY 4.0, após confirmação dos direitos                                              |
+| Catálogo autorizado                          | Manifestos já configurados em `SOURCE_MANIFEST_URLS`                                                  | Links diretos do manifesto, com evidência e hosts aprovados                                                        |
+| RSS / podcasts                               | Feeds RSS 2.0 configurados em `SOURCE_FEED_URLS`, com enclosures                                      | HTTPS público em host aprovado, após autorização individual; áudio recebe fundo vertical gerado                    |
+| Arquivo direto / armazenamento compartilhado | Identificação do link; duração validada ao importar                                                   | HTTPS público, após permissão específica ou licença registrada; sem cadastro obrigatório de host                   |
+| Upload local                                 | SHA-256, duração e validação FFprobe                                                                  | Envio binário até 512 MB, sem caminhos internos                                                                    |
 
 Os conectores distinguem identidade, metadados, direitos confirmados e disponibilidade
 do arquivo. O simples fato de encontrar uma URL nunca aprova sua reutilização.
+O motor yt-dlp opcional baixa somente arquivos autorizados, sem extratores de páginas.
+Consulte [importação por URL](importacao-url.md) para limites, credenciais e evidências.
 Permissão expressa pode ser registrada para qualquer plataforma; isso não libera
 extração por métodos não autorizados. CC BY não garante monetização nem elimina
 direitos de terceiros. Os créditos acompanham a descrição dos cortes.
