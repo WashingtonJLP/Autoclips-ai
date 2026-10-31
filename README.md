@@ -1,5 +1,7 @@
 # AutoClips AI
 
+[YouTube: métodos autorizados de obtenção do original e teste real](docs/youtube-obtencao-autorizada.md).
+
 [Criação simplificada e Biblioteca: funcionamento, exclusão e validação](docs/criacao-simplificada.md).
 
 [Verificação funcional final do MVP — resultados e pendências](docs/validacao-final-mvp.md).

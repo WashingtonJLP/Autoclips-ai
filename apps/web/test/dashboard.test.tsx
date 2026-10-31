@@ -159,6 +159,7 @@ test('análise distingue metadados de importação e oferece original sem formul
   assert.ok(
     blocked.includes('&lt;script&gt;') && !blocked.includes('<script>'),
   );
+  assert.ok(blocked.includes('vincule um original autorizado'));
   const imported = renderToStaticMarkup(
     <MediaAnalysis
       asset={{

@@ -66,7 +66,9 @@ export function MediaAnalysis({
         {asset.path
           ? 'Arquivo já importado'
           : blocked
-            ? 'Apenas metadados · envio do original necessário'
+            ? asset.platform === 'youtube'
+              ? 'Apenas metadados · vincule um original autorizado'
+              : 'Apenas metadados · envio do original necessário'
             : 'Importação disponível'}
       </strong>
       <p role="status">
@@ -104,6 +106,9 @@ export default function ProductionForm({
   const [showTests, setShowTests] = useState(false);
   const [inspected, setInspected] = useState<Asset | null>(null);
   const [pending, setPending] = useState<Request | null>(null);
+  const [originalUrl, setOriginalUrl] = useState('');
+  const [originalAsset, setOriginalAsset] = useState('');
+  const [originalPermission, setOriginalPermission] = useState(false);
   const [llm, setLlm] = useState<{
     provider: string;
     model: string;
@@ -112,6 +117,9 @@ export default function ProductionForm({
   const action = useAction();
   async function analyze() {
     setPending(null);
+    setOriginalUrl('');
+    setOriginalAsset('');
+    setOriginalPermission(false);
     const asset = await api<Asset>('media/inspect', { url: link.trim() });
     setInspected(asset);
   }
@@ -373,6 +381,97 @@ export default function ProductionForm({
             }}
           />
         )}
+        {mode === 'link' &&
+          inspected?.platform === 'youtube' &&
+          inspected.availability?.kind === 'upload_required' && (
+            <details className="advanced">
+              <summary>Usar um original autorizado sem novo upload</summary>
+              <p>
+                O YouTube não fornece um link de download pela Data API. Se o
+                titular disponibilizou o original fora da plataforma, vincule
+                esse arquivo. Você também pode reutilizar um vídeo já importado.
+                Esta associação é uma declaração sua, não uma verificação
+                automática de identidade.
+              </p>
+              <label>
+                Link HTTPS do original fornecido pelo titular
+                <input
+                  type="url"
+                  value={originalUrl}
+                  placeholder="https://seu-site/video.mp4"
+                  disabled={action.busy}
+                  onChange={(e) => {
+                    setOriginalUrl(e.target.value);
+                    setOriginalAsset('');
+                    setOriginalPermission(false);
+                  }}
+                />
+              </label>
+              <label>
+                Ou um arquivo já importado
+                <select
+                  value={originalAsset}
+                  disabled={action.busy}
+                  onChange={(e) => {
+                    setOriginalAsset(e.target.value);
+                    setOriginalUrl('');
+                    setOriginalPermission(false);
+                  }}
+                >
+                  <option value="">Selecione</option>
+                  {assets
+                    .filter((a) => a.path && a.id !== inspected.id)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.title}
+                        {a.testContent ? ' (teste sintético)' : ''}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={originalPermission}
+                  onChange={(e) => setOriginalPermission(e.target.checked)}
+                />
+                Tenho autorização para criar cortes e confirmo que este arquivo
+                é o original ou uma versão licenciada correspondente ao vídeo
+                analisado.
+              </label>
+              <button
+                className="button primary"
+                type="button"
+                disabled={
+                  action.busy ||
+                  !originalPermission ||
+                  (!originalUrl && !originalAsset)
+                }
+                onClick={() =>
+                  void action.run(async () => {
+                    const asset = await api<Asset>(
+                      `media/${inspected.id}/original`,
+                      {
+                        ...(originalUrl
+                          ? { mediaUrl: originalUrl }
+                          : { importedAssetId: originalAsset }),
+                        confirmPermission: true,
+                      },
+                    );
+                    setInspected(asset);
+                    setPending(null);
+                  }, 'Original autorizado vinculado. Agora clique em Gerar cortes.')
+                }
+              >
+                Vincular original autorizado
+              </button>
+              <p className="muted small">
+                Para vídeos próprios, o titular também pode obter o arquivo pelo
+                YouTube Studio ou Google Takeout e disponibilizá-lo por HTTPS.
+                Não acessamos sua conta nem contornamos restrições.
+              </p>
+            </details>
+          )}
       </section>
       <section className="form-section">
         <h2>Preferências dos cortes</h2>

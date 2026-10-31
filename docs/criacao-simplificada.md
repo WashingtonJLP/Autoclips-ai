@@ -27,6 +27,11 @@ sem conexão configurada ainda é identificada; seus metadados completos não s�
 YouTube sem chave oficial pode fornecer título, canal e miniatura via oEmbed, mas não
 duração. Quando o backend obtém a duração na transcrição, ela fica salva para reutilização.
 
+Para YouTube há também **Usar um original autorizado sem novo upload**: vincule a URL
+HTTPS de um arquivo fornecido pelo titular ou selecione um arquivo já importado e confirme
+a autorização específica. Depois, o mesmo link YouTube reutiliza esse original.
+Veja a [investigação oficial e o teste de obtenção autorizada](youtube-obtencao-autorizada.md).
+
 O formulário informa e seleciona heurística local para indisponibilidade da IA. É possível
 alterar isso em **Critérios da seleção e fallback**. Resultados heurísticos e mock são
 identificados; não representam análise semântica por LLM. O `.env` não é modificado.
@@ -70,7 +75,7 @@ cookies nem tokens de plataformas. Outros conectores continuam com suas polític
 
 ## Verificação executada
 
-- **61 testes API**, **9 testes React**, ESLint, builds completos API/Next.js e Docker
+- **66 testes API**, **9 testes React**, ESLint, builds completos API/Next.js e Docker
   aprovados. Python: **14 aprovados, 1 ignorado** por privilégio de symlink no Windows;
   Ruff aprovado. Nenhum teste foi desabilitado para aprovar a mudança.
 - `scripts/creation-library-smoke.mjs`: upload binário de mídia própria sintética nova,

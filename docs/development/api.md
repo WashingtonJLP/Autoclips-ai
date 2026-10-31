@@ -13,6 +13,10 @@ esse token no servidor. Não há gestão multiusuário.
   conhecidos pela identidade normalizada; não consulta novamente a plataforma nesse caso.
   Twitch sem credenciais retorna identificação limitada e `upload_required`, sem erro técnico
   na criação. Busca/monitoramento continuam reportando sua configuração administrativa.
+- `POST /media/:id/original`: associa original externo HTTPS (`mediaUrl`) ou arquivo já
+  importado (`importedAssetId`) a um asset YouTube, com `confirmPermission: true`.
+  Evidência/atribuição opcionais; permissão específica, sem herdar direitos alheios.
+  Veja [obtenção autorizada](../youtube-obtencao-autorizada.md) para limites e métodos oficiais.
 - `POST /media/upload?extension=mp4&name=original.mp4&testContent=false`: binário;
   não exige fonte. `sourceId` continua opcional por compatibilidade. Upload não concede direitos.
 - `POST /productions`: `{assetId, options?, reprocess?, confirmPermission?}`.

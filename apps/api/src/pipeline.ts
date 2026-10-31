@@ -471,6 +471,10 @@ export class PipelineController {
   production(@Body() body: unknown) {
     return this.pipeline.production.start(body);
   }
+  @Post('media/:id/original')
+  original(@Param('id') id: string, @Body() body: unknown) {
+    return this.pipeline.production.linkOriginal(id, body);
+  }
   @Post('media/upload')
   async upload(
     @Req() request: IncomingMessage,

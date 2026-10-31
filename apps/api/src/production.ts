@@ -14,6 +14,42 @@ import { parse, sourceSchema } from './contracts';
 import type { Pipeline } from './pipeline';
 import { UnavailableProvider } from './selection/provider';
 import { criteriaSchema, selectionPolicy } from './selection/contracts';
+import { selectionTransaction } from './selection/ledger';
+
+const originalRequest = z
+  .object({
+    mediaUrl: z.url().max(2000).optional(),
+    importedAssetId: z.string().min(1).optional(),
+    confirmPermission: z.literal(true),
+    evidenceUrl: z
+      .url()
+      .max(2000)
+      .refine(
+        (value) => /^https?:\/\//.test(value),
+        'Use uma evidência HTTP(S).',
+      )
+      .optional(),
+    attribution: z.string().trim().min(1).max(2000).optional(),
+  })
+  .strict()
+  .refine(
+    (v) => !!v.mediaUrl !== !!v.importedAssetId,
+    'Informe um link de arquivo ou um vídeo já importado.',
+  );
+
+export function authorizedOriginalUrl(value: string) {
+  const url = normalizedUrl(value);
+  if (
+    !/\.(mp4|webm|mov|ogv)$/i.test(url.pathname) ||
+    /(^|\.)(youtube\.com|youtu\.be|googlevideo\.com|youtube-nocookie\.com|ytimg\.com)$/.test(
+      url.hostname,
+    )
+  )
+    throw new BadRequestException(
+      'Use o link HTTPS do arquivo original disponibilizado pelo titular fora do YouTube, em MP4, WebM, MOV ou OGV. Não use páginas, players ou URLs de transmissão.',
+    );
+  return url.href;
+}
 
 export const productionOptions = z
   .object({
@@ -60,6 +96,7 @@ export function describeMedia<
     thumbnailUrl?: unknown;
     catalog?: unknown;
     metadataUnavailable?: boolean;
+    authorizedOriginal?: { method?: string };
   };
   const kind = asset.path
     ? 'imported'
@@ -72,12 +109,16 @@ export function describeMedia<
     kind === 'imported'
       ? 'O arquivo já está importado. Vamos reutilizá-lo, sem baixar novamente.'
       : kind === 'available'
-        ? 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
+        ? metadata.authorizedOriginal?.method === 'rights-holder-url'
+          ? 'Original externo autorizado vinculado. Vamos importar desse endereço, sem extrair mídia do YouTube.'
+          : 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
         : kind === 'permission_required'
           ? 'O arquivo pode ser importado. Se não houver permissão registrada, confirme que possui os direitos para este vídeo.'
           : asset.platform === 'twitch' && metadata.metadataUnavailable
             ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
-            : `Podemos identificar o vídeo, mas a integração ${asset.platform === 'youtube' ? 'YouTube' : asset.platform === 'twitch' ? 'Twitch' : asset.platform === 'vimeo' ? 'Vimeo' : 'desta plataforma'} não fornece o arquivo original. Envie o original autorizado para criar os cortes.`;
+            : asset.platform === 'youtube'
+              ? 'O YouTube fornece os metadados, mas a Data API não entrega o arquivo. Vincule um original autorizado por HTTPS, escolha um arquivo já importado ou envie o original.'
+              : `Podemos identificar o vídeo, mas a integração ${asset.platform === 'youtube' ? 'YouTube' : asset.platform === 'twitch' ? 'Twitch' : asset.platform === 'vimeo' ? 'Vimeo' : 'desta plataforma'} não fornece o arquivo original. Envie o original autorizado para criar os cortes.`;
   return {
     ...asset,
     thumbnailUrl: thumbnailUrl(metadata.thumbnailUrl),
@@ -88,39 +129,56 @@ export class Production {
   readonly connectors = new Connectors();
   constructor(private readonly p: Pipeline) {}
   async remember(candidate: Candidate) {
-    const source = await this.p.db.source.findFirst({
-      where: { url: candidate.url, commercialUseVerified: true },
-    });
-    const data = {
-      ...candidate,
-      publishedAt: candidate.publishedAt
-        ? new Date(candidate.publishedAt)
-        : undefined,
-      metadata: candidate.metadata as Prisma.InputJsonValue,
-      ...(source
-        ? {
-            sourceId: source.id,
-            rightsConfirmed: true,
-            reason: candidate.accessible
-              ? 'Direitos confirmados; disponível para processamento.'
-              : 'Direitos confirmados, mas o arquivo original ainda precisa ser enviado por um método autorizado.',
-          }
-        : {}),
-    };
-    // Nunca sobrescreve confirmação explícita ou arquivo já importado com descoberta.
-    return this.p.db.mediaAsset.upsert({
-      where: { identity: data.identity },
-      create: data,
-      update: {
-        title: data.title,
-        author: data.author,
-        duration: data.duration,
-        metadata: data.metadata,
-        reason: data.reason,
+    return selectionTransaction(this.p.db, async (tx) => {
+      const source = await tx.source.findFirst({
+        where: { url: candidate.url, commercialUseVerified: true },
+      });
+      const existing = await tx.mediaAsset.findUnique({
+        where: { identity: candidate.identity },
+      });
+      const original = (
+        existing?.metadata as {
+          authorizedOriginal?: Prisma.InputJsonValue;
+        } | null
+      )?.authorizedOriginal;
+      const data = {
+        ...candidate,
+        publishedAt: candidate.publishedAt
+          ? new Date(candidate.publishedAt)
+          : undefined,
+        metadata: {
+          ...candidate.metadata,
+          ...(original ? { authorizedOriginal: original } : {}),
+        } as Prisma.InputJsonValue,
         ...(source
-          ? { sourceId: source.id, rightsConfirmed: true, reason: data.reason }
+          ? {
+              sourceId: source.id,
+              rightsConfirmed: true,
+              reason: candidate.accessible
+                ? 'Direitos confirmados; disponível para processamento.'
+                : 'Direitos confirmados, mas o arquivo original ainda precisa ser enviado por um método autorizado.',
+            }
           : {}),
-      },
+      };
+      // Nunca sobrescreve confirmação explícita ou arquivo já importado com descoberta.
+      return tx.mediaAsset.upsert({
+        where: { identity: data.identity },
+        create: data,
+        update: {
+          title: data.title,
+          author: data.author,
+          duration: data.duration,
+          metadata: data.metadata,
+          reason: data.reason,
+          ...(source
+            ? {
+                sourceId: source.id,
+                rightsConfirmed: true,
+                reason: data.reason,
+              }
+            : {}),
+        },
+      });
     });
   }
   async inspect(body: unknown) {
@@ -130,9 +188,124 @@ export class Production {
       ? await this.p.db.mediaAsset.findUnique({ where: { identity } })
       : null;
     if (imported?.path) return describeMedia(imported);
+    if (
+      imported?.sourceId &&
+      (imported.metadata as { authorizedOriginal?: unknown })
+        ?.authorizedOriginal
+    ) {
+      const permission = await this.p.db.source.findUnique({
+        where: { id: imported.sourceId },
+      });
+      if (
+        permission?.commercialUseVerified &&
+        permission.mediaUrl &&
+        imported.mediaUrl &&
+        sameResource(permission.url, imported.url) &&
+        sameResource(permission.mediaUrl, imported.mediaUrl)
+      )
+        return describeMedia(imported);
+    }
     return describeMedia(
       await this.remember(await this.connectors.resolve(url)),
     );
+  }
+  async linkOriginal(id: string, body: unknown) {
+    const request = parse(originalRequest, body);
+    const mediaUrl = request.mediaUrl
+      ? authorizedOriginalUrl(request.mediaUrl)
+      : undefined;
+    return selectionTransaction(this.p.db, async (tx) => {
+      const asset = await tx.mediaAsset.findUnique({ where: { id } });
+      if (!asset || asset.platform !== 'youtube')
+        throw new BadRequestException(
+          'Analise primeiro o link do vídeo do YouTube que deseja utilizar.',
+        );
+      const metadata = asset.metadata as Record<string, unknown>;
+      const existing = metadata.authorizedOriginal as
+        { mediaUrl?: string; importedAssetId?: string } | undefined;
+      if (asset.path || existing) {
+        if (
+          (mediaUrl && existing?.mediaUrl === mediaUrl) ||
+          (request.importedAssetId &&
+            existing?.importedAssetId === request.importedAssetId)
+        )
+          return describeMedia(asset);
+        throw new BadRequestException(
+          'Este vídeo já tem um original vinculado. O arquivo não será substituído para preservar as produções existentes.',
+        );
+      }
+      const imported = request.importedAssetId
+        ? await tx.mediaAsset.findUnique({
+            where: { id: request.importedAssetId },
+          })
+        : null;
+      if (request.importedAssetId && !imported?.path)
+        throw new BadRequestException(
+          'Escolha um arquivo que já foi importado e validado.',
+        );
+      const source = await tx.source.upsert({
+        where: { connectorKey: `authorization-${asset.identity}` },
+        create: {
+          name: asset.title.slice(0, 200),
+          url: asset.url,
+          purpose: 'media',
+          license: 'PERMISSION',
+          evidenceUrl: request.evidenceUrl ?? mediaUrl ?? asset.url,
+          attribution:
+            request.attribution ??
+            `${asset.author ?? 'Titular'} — original ou versão licenciada fornecida pelo operador, com autorização declarada.`,
+          commercialUseVerified: true,
+          verifiedAt: new Date(),
+          mediaUrl: mediaUrl ?? null,
+          connectorKey: `authorization-${asset.identity}`,
+          evidence: {
+            method: 'operator-original-declaration',
+            scope: asset.identity,
+            confirmedAt: new Date().toISOString(),
+            ...request,
+          },
+        },
+        update: {
+          license: 'PERMISSION',
+          evidenceUrl: request.evidenceUrl ?? mediaUrl ?? asset.url,
+          attribution:
+            request.attribution ??
+            `${asset.author ?? 'Titular'} — original ou versão licenciada fornecida pelo operador, com autorização declarada.`,
+          mediaUrl: mediaUrl ?? null,
+          commercialUseVerified: true,
+          verifiedAt: new Date(),
+          evidence: {
+            method: 'operator-original-declaration',
+            scope: asset.identity,
+            confirmedAt: new Date().toISOString(),
+            ...request,
+          },
+        },
+      });
+      const updated = await tx.mediaAsset.update({
+        where: { id },
+        data: {
+          sourceId: source.id,
+          rightsConfirmed: true,
+          accessible: true,
+          mediaUrl: mediaUrl ?? null,
+          path: imported?.path ?? null,
+          duration: imported?.duration ?? asset.duration,
+          testContent: imported?.testContent ?? asset.testContent,
+          metadata: {
+            ...metadata,
+            authorizedOriginal: {
+              method: mediaUrl ? 'rights-holder-url' : 'imported-file',
+              mediaUrl: mediaUrl ?? null,
+              importedAssetId: imported?.id ?? null,
+              declaredAt: new Date().toISOString(),
+              evidenceUrl: request.evidenceUrl ?? mediaUrl ?? asset.url,
+            },
+          },
+        },
+      });
+      return describeMedia(updated);
+    });
   }
   async start(body: unknown) {
     const request = parse(productionRequest, body);
@@ -283,7 +456,10 @@ export class Production {
           : {
               url: asset.mediaUrl!,
               key: hash(asset.identity),
-              ...(asset.platform === 'direct'
+              ...(asset.platform === 'direct' ||
+              (asset.platform === 'youtube' &&
+                (asset.metadata as { authorizedOriginal?: { method?: string } })
+                  .authorizedOriginal?.method === 'rights-holder-url')
                 ? { public_file_authorized: true }
                 : {}),
               ...(asset.platform === 'commons' && catalog?.evidence?.sha1
