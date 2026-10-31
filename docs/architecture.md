@@ -24,7 +24,7 @@ flowchart LR
   F --> B[Biblioteca]
 ```
 
-`MediaAsset.identity` identifica a origem canônica; `sha256` identifica conteúdo. `Source` registra direitos e evidência, criada automaticamente pela confirmação de produção. `Task` registra operação, payload, resultado, estado, erro, parentesco, chave de idempotência e continuação.
+`MediaAsset.identity` identifica a origem canônica; `sha256` identifica conteúdo. `Source` preserva licenças verificadas e pode registrar a solicitação autenticada com política interna `PROCESSING`, sem declarar direitos comerciais. Não existe confirmação manual na criação. `Task` registra operação, payload, resultado, estado, erro, parentesco, chave de idempotência e continuação. A chave considera a identidade e as opções normalizadas; transação serializável e unicidade protegem envios concorrentes.
 
 Cada etapa persiste seu resultado e agenda a próxima. Continuações têm recuperação própria e na inicialização. Produções saudáveis não exigem **Retomar**. Seleções interrompidas não repetem chamadas externas indiscriminadamente.
 

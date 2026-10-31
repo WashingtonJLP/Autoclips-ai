@@ -11,6 +11,7 @@ Base: `http://localhost:3101`. Rotas internas exigem `Authorization: Bearer <INT
 | `POST /media/upload?extension=mp4&name=video.mp4`  | Binário `application/octet-stream`; asset validado                         |
 | `POST /media/:id/original`                         | Alternativa com `mediaUrl` ou `importedAssetId` e `confirmPermission=true` |
 | `POST /productions`                                | Inicia/reutiliza produção automática                                       |
+| `POST /productions/:id/retry`                      | Recupera falhas/cancelamentos, preservando resultados concluídos           |
 | `GET /jobs`, `GET /jobs/:id`                       | Etapas e estado                                                            |
 | `POST /jobs/:id/cancel`                            | Cancela produção/descendentes                                              |
 | `POST /jobs/:id/continue`                          | Recuperação excepcional de continuação                                     |
@@ -23,25 +24,26 @@ Base: `http://localhost:3101`. Rotas internas exigem `Authorization: Bearer <INT
 
 Outras rotas de fontes, seleção, Biblioteca e publicações estão nos controllers em `apps/api/src`. Contratos Zod são estritos. Criações NestJS normalmente retornam 201.
 
-Depois de inspecionar a URL, envie o ID retornado:
+Envie a URL diretamente, ou substitua `url` por `assetId` de uma mídia existente:
 
 ```json
 {
-  "assetId": "ID_RETORNADO",
+  "url": "https://www.youtube.com/watch?v=ID_DO_VIDEO",
   "autoRun": true,
-  "confirmPermission": true,
-  "confirmDownloadPermission": true,
   "options": {
     "maxClips": 3,
     "minDuration": 5,
     "maxDuration": 60,
     "language": "auto",
-    "fallback": "heuristic"
+    "fallback": "heuristic",
+    "burnSubtitles": true
   }
 }
 ```
 
-Confirmações devem corresponder a permissão real. `confirmDownloadPermission` aplica-se ao caminho direto YouTube. Confirmação ausente retorna `AUTHORIZATION_REQUIRED` ou `DOWNLOAD_AUTHORIZATION_REQUIRED`; ausência de método/arquivo retorna `ORIGINAL_REQUIRED`.
+Não são exigidos campos de confirmação manual. Campos antigos continuam aceitos por compatibilidade, sem bloquear a criação. A solicitação autenticada pode usar a política interna `PROCESSING`, que não verifica direitos comerciais. Acesso à mídia, segurança de rede e bloqueios externos permanecem validados. URL e assetId são mutuamente exclusivos. As opções normalizadas compõem a idempotência; respostas repetidas podem devolver a mesma produção. Veja [estados, recuperação e exclusões](pipeline.md).
+
+`POST /jobs/:id/remove` realiza exclusão lógica e retorna `undoToken`; `POST /jobs/:id/restore` recebe esse token. A Biblioteca inclui `status`, `currentStage`, `message`, `canRetry`, `hasActive`, etapas e cortes disponíveis. Não interprete apenas o estado da tarefa inicial como estado de toda a produção.
 
 ## Testes e builds
 

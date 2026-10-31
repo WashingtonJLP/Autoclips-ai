@@ -44,6 +44,8 @@ Veja [`.env.example`](../.env.example). O Compose injeta endereços internos.
 
 Credenciais existentes são preservadas. O exemplo usa mock e APIs pagas desabilitadas. Não habilite faturamento para testar.
 
+Quantidade, duração, idioma e legendas são preferências da tela Criar cortes, não exigem variáveis novas. Legendas visuais vêm ativadas por padrão e são persistidas por produção; o SRT permanece separado nas duas opções. O pedido autenticado inicia diretamente, sem confirmação manual de direitos. Informações de reutilização/publicação ficam em Configurações.
+
 ## Desenvolvimento
 
 ```powershell

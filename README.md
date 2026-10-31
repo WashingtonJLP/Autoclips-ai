@@ -16,7 +16,9 @@ docker compose ps
 
 Abra o [dashboard](http://localhost:3100) com o usuário e a senha do `.env`. A [API](http://localhost:3101/health) usa token interno. O setup preserva valores existentes. Nunca apague volumes para atualizar.
 
-Em **Criar cortes**, cole o link e clique **Gerar cortes**. Confirme direitos de processamento e permissão de download quando solicitado. As etapas continuam automaticamente. Metadados, miniaturas e formatos identificados não significam importação concluída.
+Em **Criar cortes**, cole o link, escolha quantidade, duração, idioma e **Legendas no vídeo**, e clique uma vez em **Gerar cortes**. Não há segunda confirmação de autorização. O acompanhamento continua automaticamente e permanece disponível após atualizar a página. Upload e vídeo existente são alternativas na mesma tela. Metadados, miniaturas e formatos identificados não significam importação concluída.
+
+As legendas visuais vêm ativadas por padrão; desativá-las mantém a transcrição e o SRT separado. A Biblioteca distingue produções de cortes finais. Exclusões são reversíveis e atualizam as listagens. Falhas mostram a etapa afetada e recuperação disponível, sem repetir etapas concluídas. Consulte [estados e recuperação](docs/pipeline.md).
 
 ## Estado real
 

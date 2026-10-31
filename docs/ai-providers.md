@@ -10,6 +10,8 @@
 
 O exemplo usa mock, acesso externo/pago desabilitado. A configuração local existente foi preservada. Nenhuma cobrança é habilitada e os testes desta refatoração não chamam APIs externas de IA. Use override temporário mock para integração.
 
+Criar cortes oferece fallback heurístico identificado nas opções avançadas. Se a nota mínima eliminar todos os candidatos, a produção termina como **Nenhum trecho elegível**, sem cortes fictícios. A origem efetivamente usada aparece na prévia e nos dados do corte; não é inferida pela configuração atual. A validação de UX usou os limites locais existentes e fallback, sem aumentar quotas ou habilitar cobranças.
+
 Gemini usa REST `generateContent` e JSON estruturado; OpenAI usa chat com schema; Ollama usa chat local. Zod valida respostas antes de gerar cortes. Resultados registram provedor efetivo, modelo, `simulated`, fallback, notas, justificativas e consumo informado. Não deduza o provedor antigo pela configuração atual.
 
 ## Orçamentos

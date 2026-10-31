@@ -4,7 +4,7 @@
 
 Reconhecer uma URL pública, consultar metadados e identificar formatos não exige Creative Commons. Esses resultados comprovam disponibilidade técnica, sem comprovar permissão de download ou direitos de reutilização.
 
-Antes de obter a mídia, a produção pede confirmação de que o download é permitido pela plataforma naquele cenário e de que o operador possui direitos para processar o conteúdo. A declaração fica vinculada ao vídeo; não é verificação automática de identidade ou licença. Um vídeo público não concede essas permissões por si só.
+A criação autenticada inicia a tentativa disponível com um único botão, sem quadro ou confirmação manual de direitos. A política interna de processamento não concede licença nem marca direitos comerciais como verificados. Informações de reutilização e publicação ficam em Configurações. Um vídeo público não concede essas permissões por si só; controles de acesso e restrições externas continuam sendo respeitados.
 
 O campo `accessible` na análise indica um método a tentar. Somente bytes gravados e validados por FFprobe concluem a importação. Miniaturas não contam como vídeo importado.
 
@@ -22,7 +22,7 @@ No Python, um subprocesso executa o extrator YouTube real do `yt-dlp`. Ele escol
 
 Não são usados cookies, contas do navegador, senhas, tokens PO, impersonação, bypass geográfico, DRM ou solvers JavaScript. Manifestos HLS/DASH, transmissões em andamento e acesso autenticado/restrito não recebem um método alternativo de contorno. Formatos adaptativos HTTPS separados são suportados. Mudanças do YouTube podem reduzir a cobertura.
 
-Erros distinguem URL inválida (400), restrição de acesso (403), indisponibilidade (404), formatos incompatíveis (422), quota (429), falha temporária (503) e timeout (504). URLs assinadas e stderr interno não são expostos. Falha técnica não significa falta de direitos autorais.
+Erros distinguem URL inválida (400), restrição de acesso (403), indisponibilidade (404), formatos incompatíveis (422), limite externo (429), falha temporária (503) e timeout (504). O 429 interno `WORKER_BUSY` é espera na fila, não quota do YouTube. URLs assinadas e stderr interno não são expostos. Falha técnica não significa falta de direitos autorais. Veja [diagnóstico](troubleshooting.md).
 
 Identidade canônica, chave do arquivo e chave da produção evitam repetição. Mídia importada é reutilizada antes da rede. Reprocessar opções editoriais não exige outro download.
 

@@ -1,4 +1,40 @@
-# Validação real: URL YouTube até Biblioteca
+# Validação real: interface e pipeline
+
+## Correção de UX de 31/10/2026
+
+O fluxo atual tem um único **Gerar cortes**, sem confirmação manual de direitos. Playwright local/Chrome, em contexto autenticado isolado, validou cliques rápidos e duas abas retornando a mesma produção. Configurações diferentes de legendas retornaram produções distintas. O downloader previamente validado não foi alterado: neste teste a mídia direta do YouTube já importada foi corretamente reutilizada.
+
+| Resultado real                     | Identificador               |
+| ---------------------------------- | --------------------------- |
+| Produção com legendas, dois cortes | `cmvwiqso9000037qlaomkqnaa` |
+| MP4 com legendas, 10,567 segundos  | `cmvwirxuk000437ql5la4jz87` |
+| Produção sem legendas, dois cortes | `cmvwiszkh000537ql75x4gxwn` |
+| MP4 sem legendas, 10,567 segundos  | `cmvwiszsl000837qlwz79xgsi` |
+
+As duas versões foram reproduzidas na Biblioteca (720×1280, mais de dois segundos e quadros decodificados) e tiveram MP4/SRT baixados pelo navegador. Quadros extraídos no segundo 3 mostram a legenda somente na versão ativada. Ambas mantêm SRT válido. A seleção está identificada como heurística local, sem alegação de análise semântica Gemini. Os limites existentes de blocos/quota impediram chamadas LLM externas; não houve aumento de quota ou cobrança.
+
+Exclusão individual preservou o outro corte (2 → 1 → 2 após desfazer). Exclusão de produção a retirou da Biblioteca e Tarefas recentes em outra aba; desfazer restaurou a visibilidade. Contadores do dashboard foram comparados com a Biblioteca após cada exclusão/restauração, sem recarga manual. A preferência de legendas persistiu, e a largura móvel de 390 px não apresentou rolagem horizontal.
+
+O erro antigo do vídeo `qIFRt8BhWGk` foi correlacionado a 429 interno do worker, não a quota comprovada do YouTube. Uma sonda real encontrou metadados e formatos HTTPS (AV1 720p + AAC); não foi realizado download dessa mídia de terceiros para alegar autorização. O teste de concorrência real manteve a trava ocupada com Whisper: BullMQ registrou `state=delayed`, `attemptsMade=0` e depois concluiu automaticamente, sem Retomar. Falha real de comunicação foi induzida parando somente o worker; a tela informou a etapa, sem sucesso falso. Esse teste também revelou e corrigiu o bloqueio da nova rota de recuperação pelo proxy do dashboard.
+
+**Tentar novamente** recuperou a mesma produção até FFmpeg sem reenviar o arquivo. Recarga durante processamento preservou o acompanhamento. Cancelamento permaneceu cancelado sem novos cortes. Excluir o último corte produziu `CLIPS_REMOVED`; desfazer restaurou `COMPLETED` e o contador. Nota mínima 10 com heurística resultou em `EMPTY`, zero cortes e mensagem explícita, sem sucesso normal.
+
+Os arquivos com/sem legendas têm respectivamente **1.480.644** e **1.387.610 bytes**, duração **10,566667 s** e SRT de **441 bytes**. A comparação no segundo 3 contou **7.541 pixels claros** na área da legenda ativada e **zero** na desativada. FFprobe confirmou H.264 720×1280 e áudio nas duas versões.
+
+| Verificação atual   | Resultado                                                             |
+| ------------------- | --------------------------------------------------------------------- |
+| API                 | 79 aprovados                                                          |
+| Dashboard           | 10 aprovados, incluindo recuperação pelo proxy e proteção de origem   |
+| Python Linux/Docker | 51 aprovados                                                          |
+| Python Windows      | 50 aprovados, 1 ignorado por permissão de symlink                     |
+| Qualidade           | ESLint, Ruff, formatação, Prisma/API/Next.js e build Docker aprovados |
+| Documentação        | 27 links internos verificados, nenhum quebrado                        |
+
+São **140 testes unitários aprovados em API/dashboard/Python Linux**, além de **21 grupos de verificações Playwright** (13 de interface/Biblioteca e oito de falhas/recuperação), sem erros JavaScript. O script reproduzível `scripts/ux-playwright.cjs` cobre a interface; a injeção de falhas foi executada localmente com evidências em `ux-recovery.json`. O inventário anterior preservou todos os 271 IDs de tarefas, 64 fontes, 32 mídias e 20 arquivos associados com os mesmos caminhos/hashes. PostgreSQL, Redis e os dois contêineres MatchPredict mantiveram identidade e imagem. Nenhuma migração foi necessária.
+
+Evidências locais em `artifacts/`: `ux-playwright.json`, `ux-recovery.json`, capturas `ux-*.png`, `ux-captions-on.mp4/.srt`, `ux-captions-off.mp4/.srt`, `ux-qIF-probe.json` e logs `ux-*.log`. Esses arquivos não contêm credenciais e são ignorados pelo Git. Os resultados da validação anterior abaixo foram preservados como histórico; sua confirmação manual não faz mais parte do produto.
+
+## Histórico: download direto e fluxo anterior
 
 Teste final executado em **31/10/2026, das 13:42:36 às 13:43:48 UTC**, com Playwright local autorizado e Chrome em contexto isolado. As credenciais locais foram usadas em memória, sem serem impressas ou incluídas nas evidências. Nenhuma configuração de segurança do navegador foi alterada.
 
