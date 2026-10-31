@@ -1,6 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   Candidate,
@@ -10,9 +9,9 @@ import {
   identityForUrl,
   thumbnailUrl,
 } from './connectors';
-import { parse, sourceSchema } from './contracts';
+import { parse, sourceSchema, canProcessSource } from './contracts';
 import type { Pipeline } from './pipeline';
-import { UnavailableProvider } from './selection/provider';
+import { chainIds } from './library';
 import { criteriaSchema, selectionPolicy } from './selection/contracts';
 import { selectionTransaction } from './selection/ledger';
 import { youtubeVideoId } from './youtube-url';
@@ -61,15 +60,22 @@ export const productionOptions = z
     criteria: criteriaSchema.optional(),
     minScore: z.number().min(0).max(10).optional(),
     fallback: z.enum(['none', 'heuristic']).optional(),
+    burnSubtitles: z.boolean().default(true),
   })
   .strict()
   .refine(
     (v) => v.minDuration <= v.maxDuration,
     'Duração mínima maior que a máxima',
   );
+export function transcriptResult(value: Prisma.JsonValue | null) {
+  const clean = { ...(value as Prisma.InputJsonObject) };
+  delete clean.reusedTaskId;
+  return clean;
+}
 export const productionRequest = z
   .object({
-    assetId: z.string().min(1),
+    assetId: z.string().min(1).optional(),
+    url: z.url().max(2000).optional(),
     sourceId: z.string().optional(),
     autoRun: z.boolean().default(true),
     reprocess: z.boolean().default(false),
@@ -82,9 +88,14 @@ export const productionRequest = z
       minDuration: 5,
       maxDuration: 60,
       language: 'auto',
+      burnSubtitles: true,
     }),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) => !!v.assetId !== !!v.url,
+    'Informe uma URL ou uma mídia existente.',
+  );
 export function describeMedia<
   T extends {
     platform: string;
@@ -105,27 +116,21 @@ export function describeMedia<
     ? 'imported'
     : !asset.accessible
       ? 'upload_required'
-      : asset.rightsConfirmed || metadata.catalog
-        ? 'available'
-        : 'permission_required';
+      : 'available';
   const message =
     kind === 'imported'
       ? 'O arquivo já está importado. Vamos reutilizá-lo, sem baixar novamente.'
       : kind === 'available'
         ? 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
-        : kind === 'permission_required'
-          ? asset.platform === 'youtube'
-            ? 'Vamos tentar a importação direta após confirmar os direitos e a permissão de download. A obtenção do arquivo ainda será validada.'
-            : 'O arquivo pode ser importado. Se não houver permissão registrada, confirme que possui os direitos para este vídeo.'
-          : asset.platform === 'twitch' && metadata.metadataUnavailable
-            ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
-            : asset.platform === 'youtube'
-              ? 'Não foi possível obter a mídia diretamente do YouTube. Envie o original autorizado ou vincule um arquivo disponível.'
-              : asset.platform === 'twitch'
-                ? 'O arquivo não está disponível com o acesso atual à Twitch. Use um clip com permissão oficial de download ou envie o original autorizado.'
-                : asset.platform === 'vimeo'
-                  ? 'O Vimeo não disponibilizou um arquivo com as permissões atuais. Revise a conexão ou envie o original autorizado.'
-                  : 'O arquivo não está disponível nesta integração. Envie o arquivo original autorizado para criar os cortes.';
+        : asset.platform === 'twitch' && metadata.metadataUnavailable
+          ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
+          : asset.platform === 'youtube'
+            ? 'Não foi possível obter a mídia diretamente do YouTube. Envie o original autorizado ou vincule um arquivo disponível.'
+            : asset.platform === 'twitch'
+              ? 'O arquivo não está disponível com o acesso atual à Twitch. Use um clip com permissão oficial de download ou envie o original autorizado.'
+              : asset.platform === 'vimeo'
+                ? 'O Vimeo não disponibilizou um arquivo com as permissões atuais. Revise a conexão ou envie o original autorizado.'
+                : 'O arquivo não está disponível nesta integração. Envie o arquivo original autorizado para criar os cortes.';
   return {
     ...asset,
     thumbnailUrl: thumbnailUrl(metadata.thumbnailUrl),
@@ -319,8 +324,11 @@ export class Production {
   }
   async start(body: unknown) {
     const request = parse(productionRequest, body);
+    const assetId = request.url
+      ? (await this.inspect({ url: request.url })).id
+      : request.assetId!;
     const asset = await this.p.db.mediaAsset.findUnique({
-      where: { id: request.assetId },
+      where: { id: assetId },
     });
     if (!asset) throw new NotFoundException('Vídeo importado não encontrado');
     if (!asset.path && (!asset.accessible || !asset.mediaUrl))
@@ -334,7 +342,8 @@ export class Production {
       : await this.p.db.source.findFirst({
           where: { url: asset.url, commercialUseVerified: true },
         });
-    if (source && !source.commercialUseVerified) source = null;
+    if (request.sourceId && !canProcessSource(source))
+      throw new BadRequestException('Fonte de processamento indisponivel');
     const directYouTube =
       asset.platform === 'youtube' &&
       !asset.path &&
@@ -342,121 +351,62 @@ export class Production {
         .authorizedOriginal &&
       (asset.metadata as { acquisition?: { method?: string } }).acquisition
         ?.method === 'youtube-direct';
-    // Uma autorização histórica de outra versão não autoriza o original inteiro.
-    // A nova declaração recebe fonte própria, preservando a evidência das produções antigas.
     if (
       directYouTube &&
-      source &&
-      !(source.evidence as { downloadPermissionConfirmedAt?: string } | null)
-        ?.downloadPermissionConfirmedAt
+      (source?.evidence as { method?: string } | null)?.method ===
+        'catalog-license'
     )
       source = null;
-    if (
-      directYouTube &&
-      !request.confirmDownloadPermission &&
-      !(source?.evidence as { downloadPermissionConfirmedAt?: string } | null)
-        ?.downloadPermissionConfirmedAt
-    )
-      throw new BadRequestException({
-        code: 'DOWNLOAD_AUTHORIZATION_REQUIRED',
-        message:
-          'Confirme que tem permissão para baixar este vídeo diretamente do YouTube e processá-lo. Disponibilidade pública e licença de reutilização não comprovam permissão de download.',
-      });
-    if (
-      !source &&
-      (request.authorization ||
-        request.confirmPermission ||
-        (asset.metadata as Record<string, unknown>).catalog)
-    ) {
-      const catalog = (asset.metadata as Record<string, unknown>).catalog;
-      const c = catalog as
-        | { license?: unknown; evidenceUrl?: unknown; attribution?: unknown }
-        | undefined;
-      const rights =
-        request.authorization ??
-        (c
-          ? sourceSchema.omit({ name: true, url: true }).parse({
-              license: c.license,
-              evidenceUrl: c.evidenceUrl,
-              attribution: c.attribution,
-              commercialUseVerified: true,
-            })
-          : request.confirmPermission
-            ? {
-                license: 'PERMISSION' as const,
-                evidenceUrl: asset.url,
-                attribution:
-                  asset.author ||
-                  'Autorização declarada pelo operador para esta mídia.',
-                commercialUseVerified: true as const,
-              }
-            : null);
-      if (rights) {
-        const data = sourceSchema.parse({
-          name: asset.title.slice(0, 200),
-          url: asset.url,
-          ...rights,
-        });
-        source = await this.p.db.source.upsert({
-          where: {
-            connectorKey: `${directYouTube ? 'youtube-direct-authorization' : 'authorization'}-${asset.identity}`,
-          },
+    if (!canProcessSource(source)) {
+      const catalog = (
+        asset.metadata as {
+          catalog?: {
+            license: string;
+            evidenceUrl: string;
+            attribution: string;
+          };
+        }
+      ).catalog;
+      source = await selectionTransaction(this.p.db, (tx) =>
+        tx.source.upsert({
+          where: { connectorKey: `processing-${asset.identity}` },
           update: {},
           create: {
-            ...data,
+            name: asset.title.slice(0, 200),
+            url: asset.url,
             purpose: 'media',
+            license: catalog?.license ?? 'PROCESSING',
+            evidenceUrl: catalog?.evidenceUrl ?? asset.url,
+            attribution:
+              catalog?.attribution ?? asset.author ?? 'Operador autenticado',
+            commercialUseVerified: !!catalog,
             verifiedAt: new Date(),
-            connectorKey: `${directYouTube ? 'youtube-direct-authorization' : 'authorization'}-${asset.identity}`,
+            connectorKey: `processing-${asset.identity}`,
             mediaUrl: asset.mediaUrl,
             evidence: {
-              confirmedAt: new Date().toISOString(),
-              ...(directYouTube && request.confirmDownloadPermission
-                ? { downloadPermissionConfirmedAt: new Date().toISOString() }
-                : {}),
-              metadata: asset.metadata,
-              method: request.authorization
-                ? 'documented-authorization'
-                : c
-                  ? 'catalog-license'
-                  : 'operator-declaration',
+              method: catalog
+                ? 'catalog-license'
+                : 'authenticated-processing-request',
               scope: asset.identity,
+              commercialRightsVerified: !!catalog,
+              requestedAt: new Date().toISOString(),
             },
           },
-        });
-      }
+        }),
+      );
     }
-    if (!source?.commercialUseVerified)
-      throw new BadRequestException({
-        code: 'AUTHORIZATION_REQUIRED',
-        message:
-          'Confirme que esta mídia é sua ou que você tem autorização para criar cortes. Nenhuma fonte precisa ser cadastrada.',
-      });
-    const catalog = (asset.metadata as Record<string, unknown>).catalog as
-      | { url?: string; mediaUrl?: string; evidence?: { sha1?: string } }
-      | undefined;
-    // A autorização de uma fonte não pode ser aplicada a um vídeo de outra origem.
     if (
-      !sameResource(source.url, asset.url) &&
-      !(
-        source.mediaUrl &&
-        asset.mediaUrl &&
-        sameResource(source.mediaUrl, asset.mediaUrl)
-      ) &&
-      !(catalog?.url && sameResource(source.url, catalog.url))
+      !source ||
+      (!sameResource(source.url, asset.url) &&
+        !(
+          source.mediaUrl &&
+          asset.mediaUrl &&
+          sameResource(source.mediaUrl, asset.mediaUrl)
+        ))
     )
       throw new BadRequestException(
-        'A autorização informada pertence a outro vídeo. Use a autorização desta mídia.',
+        'A fonte de processamento pertence a outro vídeo.',
       );
-    if (directYouTube && request.confirmDownloadPermission)
-      await this.p.db.source.update({
-        where: { id: source.id },
-        data: {
-          evidence: {
-            ...((source.evidence as Prisma.InputJsonObject) ?? {}),
-            downloadPermissionConfirmedAt: new Date().toISOString(),
-          },
-        },
-      });
     await this.p.db.mediaAsset.update({
       where: { id: asset.id },
       data: { sourceId: source.id, rightsConfirmed: true },
@@ -471,12 +421,10 @@ export class Production {
     const key = hash([
       selectionPolicy(effective),
       asset.identity,
-      source.id,
-      options.language,
-      !(this.p.selection.provider instanceof UnavailableProvider),
+      options,
       request.autoRun,
     ]);
-    const renderKey = request.reprocess ? `${key}-${randomUUID()}` : key;
+    let renderKey = key;
     const reused = asset.path
       ? await this.findTranscript(
           source.id,
@@ -484,61 +432,93 @@ export class Production {
           request.options.language,
         )
       : null;
-    const task = await this.p.db.task.upsert({
-      where: { renderKey },
-      update: {},
-      create: {
-        testContent: asset.testContent,
-        sourceId: source.id,
-        operation: asset.path ? 'transcribe' : 'download',
-        ...(reused
-          ? {
-              status: 'COMPLETED',
-              result: reused.result as Prisma.InputJsonValue,
-            }
-          : {}),
-        renderKey,
-        payload: asset.path
-          ? {
-              path: asset.path,
-              ...(request.options.language === 'auto'
-                ? {}
-                : { language: request.options.language }),
-            }
-          : {
-              url: asset.mediaUrl!,
-              key: hash(asset.identity),
-              engine: directYouTube
-                ? 'youtube'
-                : process.env.MEDIA_DOWNLOAD_ENGINE === 'yt-dlp'
-                  ? 'yt-dlp'
-                  : 'native',
-              ...(['vimeo-official', 'twitch-clips-official'].includes(
-                (asset.metadata as { acquisition?: { method?: string } })
-                  .acquisition?.method ?? '',
-              )
-                ? {
-                    public_file_authorized: true,
-                    file_extension: 'mp4',
-                    official_redirects: true,
-                  }
-                : {}),
-              ...(asset.platform === 'direct' ||
-              (asset.platform === 'youtube' &&
-                (asset.metadata as { authorizedOriginal?: { method?: string } })
-                  .authorizedOriginal?.method === 'rights-holder-url')
-                ? { public_file_authorized: true }
-                : {}),
-            },
-        editorial: {
-          mediaTitle: asset.title,
-          options,
-          assetId: asset.id,
-          reprocess: request.reprocess,
-          ...(reused ? { reusedTranscriptionId: reused.id } : {}),
+    const task = await selectionTransaction(this.p.db, async (tx) => {
+      const previous = await tx.task.findFirst({
+        where: {
+          deletedAt: null,
+          parentId: null,
+          editorial: { path: ['requestKey'], equals: key },
         },
-        autoRun: request.autoRun,
-      },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (previous) {
+        if (!request.reprocess) return previous;
+        const tasks = await tx.task.findMany({ where: { deletedAt: null } });
+        const ids = chainIds(tasks, previous.id);
+        if (
+          tasks.some(
+            (t) =>
+              ids.has(t.id) &&
+              (['QUEUED', 'PROCESSING', 'RETRYING'].includes(t.status) ||
+                (t.autoRun &&
+                  t.status === 'COMPLETED' &&
+                  !t.continuationDone &&
+                  !t.error)),
+          )
+        )
+          return previous;
+        renderKey = hash([key, previous.id]);
+      }
+      return tx.task.upsert({
+        where: { renderKey },
+        update: {},
+        create: {
+          testContent: asset.testContent,
+          sourceId: source.id,
+          operation: asset.path ? 'transcribe' : 'download',
+          ...(reused
+            ? {
+                status: 'COMPLETED',
+                result: transcriptResult(reused.result),
+              }
+            : {}),
+          renderKey,
+          payload: asset.path
+            ? {
+                path: asset.path,
+                ...(request.options.language === 'auto'
+                  ? {}
+                  : { language: request.options.language }),
+              }
+            : {
+                url: asset.mediaUrl!,
+                key: hash(asset.identity),
+                engine: directYouTube
+                  ? 'youtube'
+                  : process.env.MEDIA_DOWNLOAD_ENGINE === 'yt-dlp'
+                    ? 'yt-dlp'
+                    : 'native',
+                ...(['vimeo-official', 'twitch-clips-official'].includes(
+                  (asset.metadata as { acquisition?: { method?: string } })
+                    .acquisition?.method ?? '',
+                )
+                  ? {
+                      public_file_authorized: true,
+                      file_extension: 'mp4',
+                      official_redirects: true,
+                    }
+                  : {}),
+                ...(asset.platform === 'direct' ||
+                (asset.platform === 'youtube' &&
+                  (
+                    asset.metadata as {
+                      authorizedOriginal?: { method?: string };
+                    }
+                  ).authorizedOriginal?.method === 'rights-holder-url')
+                  ? { public_file_authorized: true }
+                  : {}),
+              },
+          editorial: {
+            mediaTitle: asset.title,
+            requestKey: key,
+            options,
+            assetId: asset.id,
+            reprocess: request.reprocess,
+            ...(reused ? { reusedTranscriptionId: reused.id } : {}),
+          },
+          autoRun: request.autoRun,
+        },
+      });
     });
     if (
       task.status === 'QUEUED' ||

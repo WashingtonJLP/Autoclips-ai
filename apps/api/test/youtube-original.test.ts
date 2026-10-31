@@ -157,28 +157,13 @@ function setup(direct = false, legacySource = false) {
   };
 }
 
-test('YouTube direto exige permissão de download separada dos direitos e enfileira o extrator', async () => {
+test('YouTube direto inicia sem confirmacao e separa processamento de direitos comerciais', async () => {
   const ctx = setup(true);
-  await assert.rejects(
-    () => ctx.production.start({ assetId: 'youtube', confirmPermission: true }),
-    /permissão para baixar/,
-  );
-  assert.equal(ctx.source, null);
-  await ctx.production.start({
-    assetId: 'youtube',
-    confirmPermission: true,
-    confirmDownloadPermission: true,
-  });
-  assert.equal(ctx.payload?.engine, 'youtube');
-  assert.equal(ctx.payload?.url, 'https://www.youtube.com/watch?v=ACtest00001');
-  assert.ok(
-    (ctx.source?.evidence as { downloadPermissionConfirmedAt: string })
-      .downloadPermissionConfirmedAt,
-  );
   await ctx.production.start({ assetId: 'youtube' });
   assert.equal(ctx.payload?.engine, 'youtube');
+  assert.equal(ctx.source?.license, 'PROCESSING');
+  assert.equal(ctx.source?.commercialUseVerified, false);
 });
-
 test('alternativa de original vinculado prevalece sobre metadados do extrator', async () => {
   const ctx = setup(true);
   await ctx.production.linkOriginal('youtube', {
@@ -190,28 +175,13 @@ test('alternativa de original vinculado prevalece sobre metadados do extrator', 
   assert.equal(ctx.payload?.url, 'https://holder.example/own.mp4');
 });
 
-test('declaração direta não herda nem sobrescreve licença de versão histórica', async () => {
+test('processamento direto preserva a licenca historica de outra versao', async () => {
   const ctx = setup(true, true);
   const historical = ctx.source;
-  await assert.rejects(
-    () =>
-      ctx.production.start({
-        assetId: 'youtube',
-        confirmDownloadPermission: true,
-      }),
-    /Confirme/,
-  );
-  assert.equal(ctx.source, historical);
-  await ctx.production.start({
-    assetId: 'youtube',
-    confirmDownloadPermission: true,
-    confirmPermission: true,
-  });
-  assert.equal(ctx.source?.license, 'PERMISSION');
-  assert.notEqual(ctx.source?.id, historical?.id);
+  await ctx.production.start({ assetId: 'youtube' });
+  assert.equal(ctx.source?.license, 'PROCESSING');
   assert.equal(historical?.license, 'CC0');
 });
-
 test('original externo exige declaração específica e utiliza downloader existente, sem extrair YouTube', async () => {
   const ctx = setup();
   await assert.rejects(() =>

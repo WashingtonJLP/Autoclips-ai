@@ -5,10 +5,16 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 class Rights(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    license: Literal["CC0", "CC-BY-4.0", "PERMISSION"]
+    license: Literal["CC0", "CC-BY-4.0", "PERMISSION", "PROCESSING"]
     evidence_url: HttpUrl
     attribution: str = Field(min_length=1, max_length=2000)
-    commercial_use_verified: Literal[True]
+    commercial_use_verified: bool
+
+    @model_validator(mode="after")
+    def processing_scope(self):
+        if self.license != "PROCESSING" and not self.commercial_use_verified:
+            raise ValueError("A licença exige verificação dos direitos comerciais")
+        return self
 
 
 class MediaRequest(BaseModel):

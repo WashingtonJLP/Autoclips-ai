@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BadRequestException } from '@nestjs/common';
 import { Production } from '../src/production';
 import { Pipeline } from '../src/pipeline';
 import { readSelectionConfig } from '../src/selection/contracts';
@@ -32,7 +31,11 @@ function setup(catalog = false) {
   const queued: unknown[] = [];
   const p = {
     db: {
-      mediaAsset: { findUnique: async () => asset, update: async () => asset },
+      mediaAsset: {
+        findUnique: async () => asset,
+        update: async ({ data }: { data: Record<string, unknown> }) =>
+          Object.assign(asset, data),
+      },
       source: {
         findFirst: async () => sources[0] ?? null,
         findUnique: async () => sources[0] ?? null,
@@ -61,6 +64,9 @@ function setup(catalog = false) {
       provider: new MockLlmProvider(),
     },
   };
+  Object.assign(p.db, {
+    $transaction: async (fn: (tx: unknown) => unknown) => fn(p.db),
+  });
   return {
     production: new Production(p as unknown as Pipeline),
     sources,
@@ -68,28 +74,19 @@ function setup(catalog = false) {
     asset,
   };
 }
-test('mídia nova pede uma confirmação específica e não exige cadastrar fonte', async () => {
+test('pedido autenticado inicia sem segundo formulario e nao presume direitos comerciais', async () => {
   const { production, sources, queued } = setup();
-  await assert.rejects(
-    () => production.start({ assetId: 'asset' }),
-    (e: BadRequestException) =>
-      (e.getResponse() as { code: string }).code === 'AUTHORIZATION_REQUIRED',
-  );
-  assert.equal(sources.length, 0);
-  assert.equal(queued.length, 0);
-  const root = await production.start({
-    assetId: 'asset',
-    confirmPermission: true,
-  });
+  const root = await production.start({ assetId: 'asset' });
   assert.equal(root.sourceId, 'permission');
-  assert.equal(sources[0].purpose, 'media');
-  assert.equal(sources[0].url, 'https://example.org/own.mp4');
+  assert.equal(sources[0].license, 'PROCESSING');
+  assert.equal(sources[0].commercialUseVerified, false);
   assert.equal(
     (sources[0].evidence as { method: string }).method,
-    'operator-declaration',
+    'authenticated-processing-request',
   );
+  assert.equal(queued.length, 1);
   await production.start({ assetId: 'asset' });
-  assert.equal(sources.length, 1, 'Permissão válida é reutilizada');
+  assert.equal(sources.length, 1);
 });
 test('licença de catálogo é registrada automaticamente e não amplia a origem autorizada', async () => {
   const { production, sources } = setup(true);

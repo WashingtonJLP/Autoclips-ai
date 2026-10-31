@@ -18,19 +18,20 @@ import {
   Query,
 } from '@nestjs/common';
 import { IncomingMessage } from 'node:http';
-import { Production } from './production';
+import { Production, transcriptResult } from './production';
 import { Automations, automationSchema } from './automation';
 import { hash } from './connectors';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Queue, Worker, UnrecoverableError } from 'bullmq';
-import { jobSchema, parse, sourceSchema } from './contracts';
+import { Queue, Worker, UnrecoverableError, DelayedError } from 'bullmq';
+import { jobSchema, parse, sourceSchema, canProcessSource } from './contracts';
+import { WorkerBusyError } from './worker-errors';
 import { SelectionPipeline } from './selection/pipeline';
 import { Discovery, discoveryRequest, importRequest } from './discovery';
 import { Task } from '@prisma/client';
 import { Readable } from 'node:stream';
 import { Publishing } from './publication';
-import { library, removeItem, restoreItem } from './library';
+import { library, removeItem, restoreItem, chainIds } from './library';
 import { z } from 'zod';
 
 @Injectable()
@@ -72,7 +73,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     await this.queue.setGlobalConcurrency(1);
     this.worker = new Worker(
       'media',
-      async (job) => {
+      async (job, token) => {
         if (job.name === 'continuation') {
           const task = await this.db.task.findUniqueOrThrow({
             where: { id: job.data.taskId },
@@ -145,14 +146,40 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
               commercial_use_verified: record.source.commercialUseVerified,
             },
           };
+          const payload = record.payload as {
+            path?: string;
+            language?: string;
+          };
+          const cached =
+            record.operation === 'transcribe' &&
+            (record.editorial as { assetId?: string } | null)?.assetId &&
+            payload.path
+              ? await this.production.findTranscript(
+                  record.sourceId,
+                  payload.path,
+                  payload.language ?? 'auto',
+                )
+              : null;
+          if (cached && cached.id !== record.id)
+            await this.db.task.update({
+              where: { id: record.id },
+              data: {
+                editorial: {
+                  ...(record.editorial as Prisma.InputJsonObject),
+                  reusedTranscriptionId: cached.id,
+                },
+              },
+            });
           const result =
-            record.operation === 'select'
-              ? await this.selection.execute(record)
-              : await this.callWorker(
-                  `/${record.operation}`,
-                  request,
-                  30 * 60 * 1000,
-                );
+            cached && cached.id !== record.id
+              ? transcriptResult(cached.result)
+              : record.operation === 'select'
+                ? await this.selection.execute(record)
+                : await this.callWorker(
+                    `/${record.operation}`,
+                    request,
+                    30 * 60 * 1000,
+                  );
           if (
             (await this.db.task.findUniqueOrThrow({ where: { id: record.id } }))
               .status === 'CANCELLED'
@@ -177,6 +204,18 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
               .status === 'CANCELLED'
           )
             return { cancelled: true };
+          if (error instanceof WorkerBusyError) {
+            const since = Number(job.data.busySince ?? Date.now());
+            if (Date.now() - since < 30 * 60 * 1000) {
+              await job.updateData({ ...job.data, busySince: since });
+              await this.db.task.update({
+                where: { id: record.id },
+                data: { status: 'RETRYING', error: error.message },
+              });
+              await job.moveToDelayed(Date.now() + error.retryAfterMs, token);
+              throw new DelayedError();
+            }
+          }
           const retrying =
             record.operation !== 'select' &&
             !(error instanceof UnrecoverableError) &&
@@ -198,6 +237,24 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
       { connection: this.connection, concurrency: 1 },
     );
     this.worker.on('error', (error) => this.logger.error(error.message));
+    this.worker.on('failed', (job, error) => {
+      if (!job) return;
+      void (async () => {
+        if ((await job.getState()) !== 'failed') return;
+        const id = job.name === 'continuation' ? job.data.taskId : job.id;
+        await this.db.task.updateMany({
+          where: {
+            id,
+            deletedAt: null,
+            status: { not: 'CANCELLED' },
+            ...(job.finishedOn
+              ? { updatedAt: { lte: new Date(job.finishedOn) } }
+              : {}),
+          },
+          data: { status: 'FAILED', error: error.message },
+        });
+      })().catch((e) => this.logger.error(String(e)));
+    });
     this.queue.on('error', (error) => this.logger.error(error.message));
     // Recupera tarefas persistidas se Redis foi perdido ou houve falha ao enfileirar.
     for (const task of await this.db.task.findMany({
@@ -324,7 +381,7 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           ...(reused
             ? {
                 status: 'COMPLETED',
-                result: reused.result as Prisma.InputJsonValue,
+                result: transcriptResult(reused.result),
               }
             : {}),
           payload: {
@@ -368,8 +425,13 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           where: { id: task.id },
           data: {
             continuationDone: true,
-            error:
-              'A transcrição terminou, mas nenhuma fala foi reconhecida. Não há trechos para selecionar; confira o áudio e o idioma.',
+            result: {
+              ...(task.result as Prisma.InputJsonObject),
+              outcome: 'NO_SPEECH',
+              message:
+                'A transcrição terminou, mas nenhuma fala foi reconhecida. Não há trechos para selecionar; confira o áudio e o idioma.',
+            },
+            error: null,
           },
         });
         return;
@@ -382,8 +444,13 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
           where: { id: task.id },
           data: {
             continuationDone: true,
-            error:
-              'A transcrição terminou, mas nenhum trecho adequado foi encontrado. Revise a duração e o conteúdo.',
+            result: {
+              ...(task.result as Prisma.InputJsonObject),
+              outcome: 'NO_ELIGIBLE',
+              message:
+                'A transcrição terminou, mas nenhum trecho adequado foi encontrado. Revise a duração e o conteúdo.',
+            },
+            error: null,
           },
         });
         return;
@@ -397,22 +464,53 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
     });
   }
   async callWorker(path: string, body?: unknown, timeout = 5000) {
-    const response = await fetch(
-      `${process.env.WORKER_URL ?? 'http://127.0.0.1:8000'}${path}`,
-      {
-        method: body === undefined ? 'GET' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.WORKER_API_TOKEN ?? ''}`,
+    let response: Response;
+    try {
+      response = await fetch(
+        `${process.env.WORKER_URL ?? 'http://127.0.0.1:8000'}${path}`,
+        {
+          method: body === undefined ? 'GET' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.WORKER_API_TOKEN ?? ''}`,
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: AbortSignal.timeout(timeout),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(timeout),
-      },
-    );
+      );
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        error instanceof Error && /timeout|abort/i.test(error.name)
+          ? 'A etapa excedeu o tempo de espera. Tente novamente para reutilizar o trabalho concluído.'
+          : 'Não foi possível contatar o worker. Verifique o serviço e tente novamente.',
+      );
+    }
     if (!response.ok) {
       const detail = (await response.json().catch(() => ({}))) as {
         detail?: unknown;
       };
+      const structured = detail.detail as {
+        code?: string;
+        message?: string;
+      } | null;
+      if (response.status === 429) {
+        if (
+          structured?.code === 'WORKER_BUSY' ||
+          detail.detail === 'Worker ocupado'
+        )
+          throw new WorkerBusyError(
+            Math.min(
+              15000,
+              Math.max(
+                5000,
+                Number(response.headers.get('Retry-After') ?? 5) * 1000,
+              ),
+            ),
+          );
+        throw new UnrecoverableError(
+          'A plataforma de origem limitou temporariamente o acesso (429). Aguarde antes de tentar novamente.',
+        );
+      }
       const message =
         typeof detail.detail === 'string'
           ? detail.detail
@@ -423,11 +521,68 @@ export class Pipeline implements OnModuleInit, OnModuleDestroy {
         response.status !== 429
       )
         throw new UnrecoverableError(message);
-      throw new ServiceUnavailableException(
-        `Worker indisponível (${response.status})`,
-      );
+      throw new ServiceUnavailableException(message);
     }
     return response.json() as Promise<unknown>;
+  }
+  async retryProduction(id: string) {
+    const root = await this.db.task.findUnique({ where: { id } });
+    if (!root || root.deletedAt)
+      throw new NotFoundException('Produção não encontrada');
+    const tasks = await this.db.task.findMany({ where: { deletedAt: null } });
+    const ids = chainIds(tasks, id);
+    const failed = tasks.filter(
+      (t) =>
+        ids.has(t.id) &&
+        (['FAILED', 'CANCELLED'].includes(t.status) ||
+          (t.error && t.status === 'COMPLETED')),
+    );
+    for (const task of failed) {
+      if (
+        /\(429\)/.test(task.error ?? '') &&
+        Date.now() - task.updatedAt.getTime() < 60000
+      )
+        throw new BadRequestException(
+          'A origem pediu uma pausa. Aguarde ao menos um minuto antes de tentar novamente.',
+        );
+      const job = await this.queue.getJob(task.id);
+      if (job && (await job.getState()) === 'active')
+        throw new BadRequestException(
+          'A etapa cancelada ainda está encerrando. Aguarde e tente novamente.',
+        );
+    }
+    for (const task of failed) {
+      const job = await this.queue.getJob(task.id);
+      const completed = !!task.result && task.autoRun;
+      const claim = await this.db.task.updateMany({
+        where: {
+          id: task.id,
+          status: task.status,
+          deletedAt: null,
+          error: task.error,
+        },
+        data: {
+          status: completed ? 'COMPLETED' : 'QUEUED',
+          error: null,
+          continuationDone: false,
+        },
+      });
+      if (!claim.count) continue;
+      if (job) await job.remove();
+      if (completed)
+        await this.queue.add(
+          'continuation',
+          { taskId: task.id },
+          { jobId: `retry-continue-${task.id}-${Date.now()}`, attempts: 3 },
+        );
+      else
+        await this.queue.add(
+          task.operation,
+          {},
+          { jobId: task.id, attempts: task.operation === 'select' ? 1 : 3 },
+        );
+    }
+    return { id, retried: failed.length };
   }
   async onModuleDestroy() {
     await this.worker?.close();
@@ -569,7 +724,10 @@ export class PipelineController {
         }
     }
     await this.pipeline.db.task.updateMany({
-      where: { id: { in: [...ids] } },
+      where: {
+        id: { in: [...ids] },
+        OR: [{ id }, { status: { in: ['QUEUED', 'PROCESSING', 'RETRYING'] } }],
+      },
       data: {
         status: 'CANCELLED',
         continuationDone: true,
@@ -577,6 +735,10 @@ export class PipelineController {
       },
     });
     return { cancelled: true };
+  }
+  @Post('productions/:id/retry')
+  retryProduction(@Param('id') id: string) {
+    return this.pipeline.retryProduction(id);
   }
   @Get('platforms')
   platforms() {
@@ -829,7 +991,7 @@ export class PipelineController {
     const source = await this.pipeline.db.source.findUnique({
       where: { id: sourceId },
     });
-    if (!source || !source.commercialUseVerified)
+    if (!canProcessSource(source))
       throw new NotFoundException('Fonte autorizada não encontrada');
     const renderKey = hash([
       'technical',

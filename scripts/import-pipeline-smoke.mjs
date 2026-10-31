@@ -151,7 +151,6 @@ assert.equal(
 );
 const request = {
   assetId: asset.id,
-  confirmPermission: true,
   autoRun: true,
   options: {
     maxClips: 1,
@@ -177,16 +176,6 @@ const variant = await api('media/inspect', {
   url: 'https://youtube.com/shorts/jNQXAC9IVRw',
 });
 assert.equal(youtube.id, variant.id);
-if (!youtube.path && !youtube.rightsConfirmed) {
-  const denied = await api('productions', { assetId: youtube.id }, 400);
-  assert.ok(
-    [
-      'DOWNLOAD_AUTHORIZATION_REQUIRED',
-      'AUTHORIZATION_REQUIRED',
-      'ORIGINAL_REQUIRED',
-    ].includes(denied.code),
-  );
-}
 let youtubeDownload = null;
 if (process.argv[3]) {
   assert.equal(
@@ -202,7 +191,6 @@ if (process.argv[3]) {
   const direct = await api('productions', {
     ...request,
     assetId: authorized.id,
-    confirmDownloadPermission: true,
   });
   const initial = await api(`jobs/${direct.id}`);
   assert.equal(initial.payload.engine, 'youtube');

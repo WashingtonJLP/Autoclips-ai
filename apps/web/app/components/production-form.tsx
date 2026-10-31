@@ -1,5 +1,5 @@
-﻿'use client';
-import { useEffect, useState } from 'react';
+'use client';
+import { useEffect, useRef, useState } from 'react';
 import { api, useAction } from '../shared/api';
 import { Task } from '../shared/models';
 import { Feedback } from './ui';
@@ -19,7 +19,6 @@ export type Asset = {
   thumbnailUrl?: string;
   availability?: { kind: string; message: string };
 };
-
 export function MediaAnalysis({
   asset,
   onUpload,
@@ -27,77 +26,53 @@ export function MediaAnalysis({
   asset: Asset;
   onUpload: () => void;
 }) {
-  const blocked =
-    asset.availability?.kind === 'upload_required' ||
-    (!asset.path && !asset.accessible);
   return (
-    <article className="notice" aria-label="Análise do vídeo">
+    <article className="notice" aria-label="Vídeo selecionado">
       {asset.thumbnailUrl && (
         <img
           src={asset.thumbnailUrl}
           alt={`Miniatura de ${asset.title}`}
           width={240}
           height={135}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          style={{ objectFit: 'cover', maxWidth: '100%', borderRadius: 8 }}
         />
       )}
       <h3>{asset.title}</h3>
       <p>
-        {(
-          {
-            youtube: 'YouTube',
-            twitch: 'Twitch',
-            vimeo: 'Vimeo',
-            direct: 'Arquivo direto',
-            upload: 'Arquivo enviado',
-          } as Record<string, string>
-        )[asset.platform] ?? asset.platform}
+        {asset.platform}
         {asset.author ? ` · ${asset.author}` : ''}
+        {asset.duration
+          ? ` · ${Math.floor(asset.duration / 60)}:${String(Math.round(asset.duration) % 60).padStart(2, '0')}`
+          : ''}
       </p>
       <p>
-        {asset.duration
-          ? `Duração: ${Math.floor(Math.round(asset.duration) / 60)}:${String(Math.round(asset.duration) % 60).padStart(2, '0')}`
-          : 'Duração ainda não informada'}
-      </p>
-      <strong>
         {asset.path
           ? 'Arquivo já importado'
-          : blocked
-            ? asset.platform === 'youtube'
-              ? 'Apenas metadados · vincule um original autorizado'
-              : 'Apenas metadados · envio do original necessário'
-            : asset.platform === 'youtube'
-              ? 'Importação direta pendente de validação'
-              : 'Importação disponível'}
-      </strong>
-      <p role="status">
-        {asset.availability?.message ??
-          (asset.path
-            ? 'Vamos reutilizar o arquivo já importado.'
-            : asset.reason)}
+          : asset.accessible
+            ? 'O arquivo será obtido durante a produção.'
+            : 'Arquivo não disponível nesta origem.'}
       </p>
-      {blocked && (
-        <button className="button primary" type="button" onClick={onUpload}>
-          Enviar o original autorizado
+      {!asset.path && !asset.accessible && (
+        <button type="button" className="button" onClick={onUpload}>
+          Enviar arquivo
         </button>
       )}
     </article>
   );
 }
-type Request = {
-  assetId: string;
-  autoRun: boolean;
-  reprocess: boolean;
-  options: Record<string, unknown>;
+const defaults = {
+  maxClips: 3,
+  maxDuration: 60,
+  language: 'auto',
+  burnSubtitles: true,
 };
 export default function ProductionForm({
   onCreated,
   initialAsset,
+  inProgress = false,
 }: {
   onCreated: (task: Task) => void;
   initialAsset?: string;
+  inProgress?: boolean;
 }) {
   const [mode, setMode] = useState(initialAsset ? 'imported' : 'link');
   const [link, setLink] = useState('');
@@ -105,26 +80,11 @@ export default function ProductionForm({
   const [selected, setSelected] = useState(initialAsset ?? '');
   const [filter, setFilter] = useState('');
   const [showTests, setShowTests] = useState(false);
+  const [prefs, setPrefs] = useState(defaults);
+  const [edited, setEdited] = useState(false);
   const [inspected, setInspected] = useState<Asset | null>(null);
-  const [pending, setPending] = useState<Request | null>(null);
-  const [originalUrl, setOriginalUrl] = useState('');
-  const [originalAsset, setOriginalAsset] = useState('');
-  const [originalPermission, setOriginalPermission] = useState(false);
-  const [llm, setLlm] = useState<{
-    provider: string;
-    model: string;
-    simulated: boolean;
-  } | null>(null);
+  const locked = useRef(false);
   const action = useAction();
-  async function analyze() {
-    setPending(null);
-    setOriginalUrl('');
-    setOriginalAsset('');
-    setOriginalPermission(false);
-    const asset = await api<Asset>('media/inspect', { url: link.trim() });
-    setInspected(asset);
-    return asset;
-  }
   useEffect(() => {
     const controller = new AbortController();
     void api<Asset[]>('media', undefined, controller.signal)
@@ -134,460 +94,278 @@ export default function ProductionForm({
           setShowTests(true);
       })
       .catch(() => {});
-    void api<typeof llm>('llm/config', undefined, controller.signal)
-      .then(setLlm)
-      .catch(() => {});
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem('autoclips:preferences') ?? 'null',
+      );
+      if (saved) setPrefs({ ...defaults, ...saved });
+    } catch {}
     return () => controller.abort();
   }, [initialAsset]);
-  async function start(request: Request) {
-    const response = await fetch('/api/backend/productions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    });
-    const data = await response.json();
-    if (
-      ['AUTHORIZATION_REQUIRED', 'DOWNLOAD_AUTHORIZATION_REQUIRED'].includes(
-        data.code,
-      )
-    ) {
-      setPending(request);
-      return;
-    }
-    if (!response.ok)
-      throw new Error(
-        typeof data.message === 'string'
-          ? data.message
-          : 'Confira a mídia e tente novamente.',
-      );
-    onCreated(data);
+  function preference(value: Partial<typeof defaults>) {
+    const next = { ...prefs, ...value };
+    setPrefs(next);
+    localStorage.setItem('autoclips:preferences', JSON.stringify(next));
   }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (locked.current) return;
+    locked.current = true;
     const form = new FormData(event.currentTarget);
-    setPending(null);
-    await action.run(async () => {
-      let asset: Asset;
-      if (mode === 'link') {
-        asset = inspected ?? (await analyze());
-        if (!asset.path && !asset.accessible)
-          throw new Error(
-            asset.availability?.message ??
-              'Vincule um original autorizado para continuar.',
-          );
-      } else if (mode === 'upload') {
-        const file = form.get('file') as File;
-        const extension = file?.name.split('.').at(-1)?.toLowerCase();
-        if (!file?.size || file.size > 512 * 1024 ** 2)
-          throw new Error('Escolha um vídeo de até 512 MB.');
-        if (!['mp4', 'webm', 'mov'].includes(extension ?? ''))
-          throw new Error('Escolha um arquivo MP4, WebM ou MOV.');
-        const query = new URLSearchParams({
-          extension: extension!,
-          name: file.name,
-          testContent: String(form.get('testContent') === 'on'),
+    try {
+      await action.run(async () => {
+        let assetId = selected;
+        if (mode === 'upload') {
+          const file = form.get('file') as File;
+          const extension = file?.name.split('.').at(-1)?.toLowerCase();
+          if (!file?.size || file.size > 512 * 1024 ** 2)
+            throw Error('Escolha um vídeo de até 512 MB.');
+          if (!['mp4', 'webm', 'mov'].includes(extension ?? ''))
+            throw Error('Escolha MP4, WebM ou MOV.');
+          const query = new URLSearchParams({
+            extension: extension!,
+            name: file.name,
+            testContent: String(form.get('testContent') === 'on'),
+          });
+          const response = await fetch(`/api/backend/media/upload?${query}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
+          });
+          const asset = await response.json();
+          if (!response.ok)
+            throw Error(asset.message ?? 'Não foi possível enviar o arquivo.');
+          assetId = asset.id;
+          setInspected(asset);
+          setSelected(asset.id);
+          setAssets((items) => [
+            asset,
+            ...items.filter((a) => a.id !== asset.id),
+          ]);
+        }
+        const task = await api<Task>('productions', {
+          ...(mode === 'link' ? { url: link.trim() } : { assetId }),
+          autoRun: true,
+          reprocess: form.get('reprocess') === 'on',
+          options: {
+            ...prefs,
+            minDuration: Number(form.get('minDuration') ?? 5),
+            criteria: form.getAll('criteria'),
+            fallback: form.get('fallback') || 'heuristic',
+            ...(form.get('minScore')
+              ? { minScore: Number(form.get('minScore')) }
+              : {}),
+          },
         });
-        const response = await fetch(`/api/backend/media/upload?${query}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: file,
-        });
-        const result = await response.json();
-        if (!response.ok)
-          throw new Error(result.message ?? 'Não foi possível enviar o vídeo.');
-        asset = result;
-        setAssets((items) => [
-          asset,
-          ...items.filter((a) => a.id !== asset.id),
-        ]);
-        setSelected(asset.id);
-      } else {
-        const found = assets.find((a) => a.id === selected);
-        if (!found) throw new Error('Selecione um vídeo da lista.');
-        asset = found;
-      }
-      setInspected(asset);
-      const criteria = form.getAll('criteria');
-      if (!criteria.length)
-        throw new Error('Escolha pelo menos um critério de seleção.');
-      await start({
-        assetId: asset.id,
-        autoRun: true,
-        reprocess: form.get('reprocess') === 'on',
-        options: {
-          maxClips: Number(form.get('maxClips')),
-          minDuration: Number(form.get('minDuration')),
-          maxDuration: Number(form.get('maxDuration')),
-          language: form.get('language'),
-          criteria,
-          ...(form.get('minScore')
-            ? { minScore: Number(form.get('minScore')) }
-            : {}),
-          ...(form.get('fallback') ? { fallback: form.get('fallback') } : {}),
-        },
-      });
-    }, 'Mídia conferida. Acompanhe a produção ou confirme a autorização abaixo.');
+        setEdited(false);
+        onCreated(task);
+      }, '');
+    } finally {
+      locked.current = false;
+    }
   }
   return (
     <form
       className="panel"
       onSubmit={(e) => void submit(e)}
-      onChange={() => setPending(null)}
+      onChange={() => setEdited(true)}
+      aria-label="Configuração da produção"
     >
-      <Feedback error={action.error} message={action.message} />
-      <section className="form-section">
-        <h2>Escolha seu vídeo</h2>
-        <div className="row">
-          {(
-            [
-              ['link', 'Colar link'],
-              ['upload', 'Enviar arquivo'],
-              ['imported', 'Escolher vídeo'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={mode === value}
-              disabled={action.busy}
-              className={`button ${mode === value ? 'primary' : ''}`}
-              onClick={() => {
-                setMode(value);
-                setPending(null);
-                setInspected(null);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {mode === 'link' && (
-          <div>
-            <label>
-              Link do vídeo
-              <input
-                name="url"
-                type="url"
-                required
-                placeholder="https://…"
-                maxLength={2000}
-                value={link}
-                disabled={action.busy}
-                onChange={(e) => {
-                  setLink(e.target.value);
-                  setInspected(null);
-                  setPending(null);
-                }}
-              />
-              <small>
-                Cole o link do YouTube, Twitch, Vimeo ou de um arquivo HTTPS
-                autorizado.
-              </small>
-            </label>
-          </div>
-        )}
-        {mode === 'upload' && (
-          <label>
-            Arquivo original
-            <input
-              name="file"
-              type="file"
-              required
-              accept=".mp4,.webm,.mov"
-              disabled={action.busy}
-            />
-            <small>MP4, WebM ou MOV, até 512 MB e duas horas.</small>
-          </label>
-        )}
-        {mode === 'imported' && (
-          <>
-            <label>
-              Buscar vídeo
-              <input
-                type="search"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Título ou plataforma"
-              />
-            </label>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={showTests}
-                onChange={(e) => setShowTests(e.target.checked)}
-              />
-              Mostrar mídias sintéticas de teste
-            </label>
-            <label>
-              Vídeo importado
-              <select
-                required
-                value={selected}
-                onChange={(e) => {
-                  setSelected(e.target.value);
-                  setPending(null);
-                }}
-              >
-                <option value="">Selecione um vídeo</option>
-                {assets
-                  .filter(
-                    (a) =>
-                      a.path &&
-                      (showTests || !a.testContent) &&
-                      `${a.title} ${a.platform}`
-                        .toLowerCase()
-                        .includes(filter.toLowerCase()),
-                  )
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.title} · {a.platform}
-                      {a.duration ? ` · ${Math.round(a.duration)} s` : ''}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {!assets.some((a) => a.path && (showTests || !a.testContent)) && (
-              <p>
-                Você ainda não tem vídeos nesta lista. Envie um arquivo ou cole
-                um link.
-              </p>
-            )}
-          </>
-        )}
-        {inspected && (
-          <MediaAnalysis
-            asset={inspected}
-            onUpload={() => {
-              setMode('upload');
-              setPending(null);
+      <h2>Configuração</h2>
+      <Feedback error={action.error} />
+      <div className="row">
+        {[
+          ['link', 'Colar URL'],
+          ['upload', 'Enviar arquivo'],
+          ['imported', 'Escolher vídeo existente'],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className="button"
+            aria-pressed={mode === value}
+            disabled={action.busy}
+            onClick={() => {
+              setMode(value);
+              setEdited(true);
               setInspected(null);
             }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {mode === 'link' && (
+        <label>
+          URL do vídeo
+          <input
+            name="url"
+            type="url"
+            required
+            value={link}
+            maxLength={2000}
+            placeholder="https://www.youtube.com/watch?v=…"
+            disabled={action.busy}
+            onChange={(e) => setLink(e.target.value)}
           />
-        )}
-        {mode === 'link' &&
-          inspected?.platform === 'youtube' &&
-          !inspected.path && (
-            <details className="advanced">
-              <summary>Usar um original autorizado sem novo upload</summary>
-              <p>
-                Se a importação direta não estiver permitida ou disponível, você
-                pode vincular um arquivo autorizado fornecido pelo titular ou
-                reutilizar um vídeo já importado. Esta associação é uma
-                declaração sua, não uma verificação automática de identidade.
-              </p>
-              <label>
-                Link HTTPS do original fornecido pelo titular
-                <input
-                  type="url"
-                  value={originalUrl}
-                  placeholder="https://seu-site/video.mp4"
-                  disabled={action.busy}
-                  onChange={(e) => {
-                    setOriginalUrl(e.target.value);
-                    setOriginalAsset('');
-                    setOriginalPermission(false);
-                  }}
-                />
-              </label>
-              <label>
-                Ou um arquivo já importado
-                <select
-                  value={originalAsset}
-                  disabled={action.busy}
-                  onChange={(e) => {
-                    setOriginalAsset(e.target.value);
-                    setOriginalUrl('');
-                    setOriginalPermission(false);
-                  }}
-                >
-                  <option value="">Selecione</option>
-                  {assets
-                    .filter((a) => a.path && a.id !== inspected.id)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.title}
-                        {a.testContent ? ' (teste sintético)' : ''}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  checked={originalPermission}
-                  onChange={(e) => setOriginalPermission(e.target.checked)}
-                />
-                Tenho autorização para criar cortes e confirmo que este arquivo
-                é o original ou uma versão licenciada correspondente ao vídeo
-                analisado.
-              </label>
-              <button
-                className="button primary"
-                type="button"
-                disabled={
-                  action.busy ||
-                  !originalPermission ||
-                  (!originalUrl && !originalAsset)
-                }
-                onClick={() =>
-                  void action.run(async () => {
-                    const asset = await api<Asset>(
-                      `media/${inspected.id}/original`,
-                      {
-                        ...(originalUrl
-                          ? { mediaUrl: originalUrl }
-                          : { importedAssetId: originalAsset }),
-                        confirmPermission: true,
-                      },
-                    );
-                    setInspected(asset);
-                    setPending(null);
-                  }, 'Original autorizado vinculado. Agora clique em Gerar cortes.')
-                }
-              >
-                Vincular original autorizado
-              </button>
-              <p className="muted small">
-                Para vídeos próprios, o titular também pode obter o arquivo pelo
-                YouTube Studio ou Google Takeout e disponibilizá-lo por HTTPS.
-                Não acessamos sua conta nem contornamos restrições.
-              </p>
-            </details>
-          )}
-      </section>
-      <section className="form-section">
-        <h2>Preferências dos cortes</h2>
-        <div className="form-grid">
+        </label>
+      )}
+      {mode === 'upload' && (
+        <label>
+          Arquivo de vídeo
+          <input
+            name="file"
+            type="file"
+            accept=".mp4,.webm,.mov"
+            required
+            disabled={action.busy}
+          />
+          <small>MP4, WebM ou MOV, até 512 MB.</small>
+        </label>
+      )}
+      {mode === 'imported' && (
+        <>
           <label>
-            Quantidade
+            Buscar vídeo
             <input
-              name="maxClips"
-              type="number"
-              min="1"
-              max="10"
-              defaultValue="3"
-              required
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
             />
           </label>
           <label>
-            Duração máxima
-            <select name="maxDuration" defaultValue="60">
-              <option value="30">30 segundos</option>
-              <option value="60">60 segundos</option>
-              <option value="90">90 segundos</option>
-              <option value="180">180 segundos</option>
-            </select>
-          </label>
-          <label>
-            Idioma
-            <select name="language" defaultValue="auto">
-              <option value="auto">Detectar</option>
-              <option value="pt">Português</option>
-              <option value="en">Inglês</option>
-              <option value="es">Espanhol</option>
-            </select>
-          </label>
-        </div>
-        <details className="advanced">
-          <summary>Mais opções</summary>
-          <label>
-            Duração mínima (segundos)
-            <input
-              name="minDuration"
-              type="number"
-              min="1"
-              max="60"
-              defaultValue="5"
+            Vídeo existente
+            <select
               required
-            />
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
+              <option value="">Selecione</option>
+              {assets
+                .filter(
+                  (a) =>
+                    a.path &&
+                    (showTests || !a.testContent) &&
+                    `${a.title} ${a.platform}`
+                      .toLowerCase()
+                      .includes(filter.toLowerCase()),
+                )
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title}
+                  </option>
+                ))}
+            </select>
           </label>
           <label className="check-label">
-            <input name="reprocess" type="checkbox" />
-            Gerar uma nova versão, mesmo se já houver cortes
+            <input
+              type="checkbox"
+              checked={showTests}
+              onChange={(e) => setShowTests(e.target.checked)}
+            />
+            Mostrar testes sintéticos
           </label>
-          {mode === 'upload' && (
-            <label className="check-label">
-              <input name="testContent" type="checkbox" />
-              Este arquivo é conteúdo sintético de teste
-            </label>
-          )}
-          {llm && (
-            <p className="muted small">
-              Seleção: {llm.provider} · {llm.model}.{' '}
-              {llm.simulated
-                ? 'Mock de teste, sem análise semântica.'
-                : 'Resultados sujeitos à disponibilidade e revisão.'}
-            </p>
-          )}
-        </details>
-        <SelectionCriteria defaultFallback="heuristic" />
-        <p className="muted small">
-          A transcrição, os cortes e as legendas continuam automaticamente. Se
-          faltar autorização, você poderá confirmá-la apenas para este vídeo. Se
-          a IA estiver indisponível, usaremos heurística local identificada, sem
-          análise semântica. Você pode alterar essa opção acima.
-        </p>
-        {
-          <button
-            className="button primary"
-            type="submit"
-            disabled={
-              action.busy ||
-              (mode === 'link' &&
-                inspected?.availability?.kind === 'upload_required')
-            }
-          >
-            {action.busy ? 'Preparando vídeo…' : 'Gerar cortes'}
-          </button>
-        }
-      </section>
-      {pending && (
-        <section
-          className="notice"
-          role="region"
-          aria-label="Autorização desta mídia"
-        >
-          <h3>Você pode usar este vídeo?</h3>
-          <p>
-            Confirme que o vídeo é seu ou que você tem autorização para criar
-            cortes e para o uso pretendido. Um link público não concede direitos
-            de republicação. A declaração será registrada apenas para esta
-            mídia.
-          </p>
-          {inspected?.platform === 'youtube' && !inspected.path && (
-            <p>
-              Também confirmo que o download direto é permitido pela plataforma
-              para este vídeo. Ser público ou ter licença de reutilização não
-              basta. O sistema respeitará bloqueios de acesso.
-            </p>
-          )}
-          <button
-            className="button primary"
-            type="button"
-            disabled={action.busy}
-            onClick={() =>
-              void action.run(async () => {
-                const task = await api<Task>('productions', {
-                  ...pending,
-                  confirmPermission: true,
-                  confirmDownloadPermission: true,
-                });
-                setPending(null);
-                onCreated(task);
-              }, 'Produção iniciada.')
-            }
-          >
-            Tenho autorização — gerar cortes
-          </button>
-          <button
-            className="button subtle"
-            type="button"
-            onClick={() => setPending(null)}
-          >
-            Cancelar
-          </button>
-        </section>
+        </>
       )}
+      {inspected && (
+        <MediaAnalysis asset={inspected} onUpload={() => setMode('upload')} />
+      )}
+      <div className="form-grid">
+        <label>
+          Quantidade de cortes
+          <input
+            name="maxClips"
+            type="number"
+            min={1}
+            max={10}
+            required
+            value={prefs.maxClips}
+            onChange={(e) => preference({ maxClips: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          Duração máxima
+          <select
+            name="maxDuration"
+            value={prefs.maxDuration}
+            onChange={(e) =>
+              preference({ maxDuration: Number(e.target.value) })
+            }
+          >
+            {[30, 60, 90, 180].map((n) => (
+              <option key={n} value={n}>
+                {n} segundos
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Idioma
+          <select
+            name="language"
+            value={prefs.language}
+            onChange={(e) => preference({ language: e.target.value })}
+          >
+            <option value="auto">Detectar</option>
+            <option value="pt">Português</option>
+            <option value="en">Inglês</option>
+            <option value="es">Espanhol</option>
+          </select>
+        </label>
+        <label>
+          Legendas no vídeo
+          <select
+            name="burnSubtitles"
+            value={String(prefs.burnSubtitles)}
+            onChange={(e) =>
+              preference({ burnSubtitles: e.target.value === 'true' })
+            }
+          >
+            <option value="true">Com legendas</option>
+            <option value="false">Sem legendas</option>
+          </select>
+        </label>
+      </div>
+      <details className="advanced">
+        <summary>Opções avançadas</summary>
+        <label>
+          Duração mínima (segundos)
+          <input
+            type="number"
+            name="minDuration"
+            min={1}
+            max={60}
+            defaultValue={5}
+            required
+          />
+        </label>
+        <label className="check-label">
+          <input name="reprocess" type="checkbox" />
+          Gerar nova versão após a produção anterior
+        </label>
+        {mode === 'upload' && (
+          <label className="check-label">
+            <input name="testContent" type="checkbox" />
+            Conteúdo sintético de teste
+          </label>
+        )}
+        <SelectionCriteria defaultFallback="heuristic" />
+      </details>
+      <button
+        className="button primary"
+        type="submit"
+        disabled={action.busy || (inProgress && !edited)}
+      >
+        {action.busy
+          ? 'Iniciando produção...'
+          : inProgress && !edited
+            ? 'Produção em andamento'
+            : 'Gerar cortes'}
+      </button>
+      <p className="muted small">
+        As etapas continuam automaticamente.{' '}
+        <a href="/configuracoes">Informações de uso e publicação</a>
+      </p>
     </form>
   );
 }

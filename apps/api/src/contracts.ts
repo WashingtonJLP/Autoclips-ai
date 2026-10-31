@@ -1,6 +1,17 @@
 import { BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
 
+// PROCESSING autoriza apenas a execução solicitada pelo operador autenticado;
+// não representa verificação de direitos comerciais ou permissão de publicação.
+export function canProcessSource(
+  source: { license: string; commercialUseVerified: boolean } | null,
+) {
+  return (
+    !!source &&
+    (source.commercialUseVerified || source.license === 'PROCESSING')
+  );
+}
+
 const url = z.url().refine((v) => /^https?:\/\//.test(v), 'Use URL HTTP(S)');
 const segmentSchema = z
   .object({

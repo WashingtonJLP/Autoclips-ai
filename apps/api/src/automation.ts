@@ -32,6 +32,7 @@ export const searchConfig = z
       minDuration: 5,
       maxDuration: 60,
       language: 'auto',
+      burnSubtitles: true,
     }),
   })
   .strict()

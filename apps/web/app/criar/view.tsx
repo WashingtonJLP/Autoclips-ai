@@ -4,84 +4,58 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, useAction, useResources } from '../shared/api';
 import {
+  Library,
   Task,
-  Source,
-  descendants,
+  operationNames,
   paginate,
   statusNames,
 } from '../shared/models';
 import {
   PageHeader,
-  Refresh,
   Feedback,
-  Empty,
   Pagination,
   Badge,
   Advanced,
 } from '../components/ui';
 import ProductionForm from '../components/production-form';
-import TaskList from '../components/task-list';
-import Icon from '../components/glyph';
+import ProductionList from '../components/production-list';
+const isActive = (status: string) =>
+  ['QUEUED', 'PROCESSING', 'RETRYING'].includes(status);
 export default function CreateView({
   initialTask,
   initialAsset,
 }: {
   initialTask?: string;
-  initialSource?: string;
   initialAsset?: string;
+  initialSource?: string;
 }) {
-  const { data, loading, error, refresh } = useResources([
-    'jobs',
-    ...(initialTask ? [`jobs/${initialTask}`] : []),
-  ]);
-  const sources = (data.sources ?? []) as Source[],
-    tasks = (data.jobs ?? []) as Task[],
-    router = useRouter(),
-    action = useAction();
+  const { data, loading, error, refresh } = useResources(['library']);
+  const content = (data.library ?? { productions: [], clips: [] }) as Library;
+  const [started, setStarted] = useState<Task | null>(null);
+  const [awaitingRoot, setAwaitingRoot] = useState(false);
+  const [saved, setSaved] = useState<string>();
   const [page, setPage] = useState(1),
-    [status, setStatus] = useState(''),
-    [started, setStarted] = useState<Task | null>(null);
-  const rootId = initialTask ?? started?.id,
-    root = rootId
-      ? ((data[`jobs/${rootId}`] as Task | undefined) ??
-        tasks.find((t) => t.id === rootId) ??
-        started)
-      : null;
-  const chain = root
-      ? descendants([root, ...tasks.filter((t) => t.id !== root.id)], root.id)
-      : [],
-    results = chain.filter(
-      (t) => t.operation === 'clip' && t.status === 'COMPLETED',
-    );
-  const list = paginate(
-    tasks.filter((t) => !status || t.status === status),
-    page,
-    6,
-  );
-  const allSteps = [
-    ['download', 'Coleta de mídia'],
-    ['transcribe', 'Transcrição'],
-    ['select', 'Seleção de trechos'],
-    ['clip', 'Vídeos e legendas'],
-  ];
-  const steps = allSteps.slice(
-    Math.max(
-      0,
-      allSteps.findIndex(([operation]) => operation === root?.operation),
-    ),
-  );
-  const pending = chain.find(
-    (task) =>
-      task.autoRun && task.status === 'COMPLETED' && !task.continuationDone,
-  );
-  const running = chain.some(
-    (t) =>
-      ['QUEUED', 'PROCESSING', 'RETRYING'].includes(t.status) ||
-      (t.autoRun &&
-        t.status === 'COMPLETED' &&
-        !t.continuationDone &&
-        !t.error),
-  );
+    [status, setStatus] = useState('');
+  const router = useRouter(),
+    action = useAction();
+  const rootId = initialTask ?? started?.id ?? saved;
+  const production = content.productions.find((p) => p.id === rootId);
+  const pending = started && awaitingRoot && !production;
+  const running =
+    content.productions.some((p) => p.hasActive || isActive(p.status)) ||
+    !!pending;
+  useEffect(() => {
+    if (initialTask || started || saved) return;
+    const id = localStorage.getItem('autoclips:active-production');
+    if (
+      id &&
+      content.productions.some((p) => p.id === id && isActive(p.status))
+    )
+      setSaved(id);
+  }, [initialTask, started, saved, content.productions]);
+  useEffect(() => {
+    if (production) setAwaitingRoot(false);
+  }, [production]);
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => {
@@ -89,159 +63,179 @@ export default function CreateView({
     }, 5000);
     return () => clearInterval(timer);
   }, [running, refresh]);
+  const rows = paginate(
+    content.productions.filter((p) => !status || p.status === status),
+    page,
+    6,
+  );
+  const stages = ['download', 'transcribe', 'select', 'clip'];
+  const rootActive = production ? isActive(production.status) : !!pending;
   return (
     <>
       <PageHeader
         eyebrow="PRODUÇÃO"
         title="Criar cortes"
-        description="Da mídia autorizada ao vídeo pronto, com etapas claras."
-      >
-        <Refresh onClick={() => void refresh()} disabled={loading} />
-      </PageHeader>
+        description="Escolha o vídeo e as preferências. As etapas continuam automaticamente."
+      />
       <Feedback
         error={error || action.error}
-        message={action.message}
-        loading={loading}
+        loading={loading && !data.library}
       />
       <div className="two-columns">
         <ProductionForm
           initialAsset={initialAsset}
+          inProgress={rootActive}
           onCreated={(task) => {
             setStarted(task);
+            setAwaitingRoot(true);
+            localStorage.setItem('autoclips:active-production', task.id);
             router.replace(`/criar?producao=${task.id}`);
             void refresh();
           }}
         />
-        <aside className="panel">
-          <h2>{root ? 'Acompanhar produção' : 'Tudo pronto para começar'}</h2>
-          {!root ? (
-            <>
-              <p className="panel-intro">
-                Cole um link, envie um arquivo ou escolha um vídeo. Depois de
-                iniciar, acompanhe o andamento por aqui.
-              </p>
-              <div className="info-card">
-                <Icon name="check" />
-                <h3>Uma etapa de cada vez</h3>
-                <p>
-                  A produção continua em segundo plano. Use Atualizar para
-                  consultar o progresso quando quiser. A tela também atualiza
-                  durante o processamento.
-                </p>
-              </div>
-              <p className="muted small" style={{ marginTop: 18 }}>
-                A publicação permanece em simulação. Revise o resultado antes de
-                agendar.
-              </p>
-            </>
+        <aside className="panel" aria-label="Acompanhamento da produção">
+          <h2>Acompanhamento</h2>
+          {!rootId ? (
+            <p>Cole uma URL ou escolha um arquivo para começar.</p>
           ) : (
             <>
-              <p className="panel-intro">
-                Atualize para acompanhar as etapas desta produção.
+              <h3>
+                {production?.title ??
+                  started?.editorial?.mediaTitle ??
+                  'Preparando vídeo'}
+              </h3>
+              <p role="status">
+                {production?.status === 'FAILED'
+                  ? 'Falhou'
+                  : rootActive
+                    ? 'Produção em andamento'
+                    : production
+                      ? statusNames[production.status]
+                      : loading || pending
+                        ? 'Carregando produção...'
+                        : 'Produção removida ou não encontrada.'}
               </p>
               <div className="progress-steps">
-                {steps.map(([operation, label], i) => {
-                  const records = chain.filter(
-                      (t) => t.operation === operation,
-                    ),
-                    done =
-                      records.length > 0 &&
-                      records.every((t) => t.status === 'COMPLETED');
-                  const state =
-                    records.find((t) => t.status === 'FAILED')?.status ??
-                    records.find((t) => t.status !== 'COMPLETED')?.status;
+                {stages.map((operation) => {
+                  const records =
+                    production?.steps.filter(
+                      (s) => s.operation === operation,
+                    ) ?? [];
+                  const reused =
+                    !!production?.startOperation &&
+                    stages.indexOf(operation) <
+                      stages.indexOf(production.startOperation);
+                  const stageStatus =
+                    records.find((s) => s.status === 'FAILED')?.status ??
+                    records.find((s) => s.status === 'CANCELLED')?.status ??
+                    records.find((s) => s.status !== 'COMPLETED')?.status ??
+                    (records.length ? 'COMPLETED' : undefined);
                   return (
                     <div
                       key={operation}
-                      className={`progress-step ${done ? 'done' : ''}`}
+                      className={`progress-step ${stageStatus === 'COMPLETED' || reused ? 'done' : ''}`}
                     >
-                      <span>
-                        {done ? <Icon name="check" size={15} /> : i + 1}
-                      </span>
-                      <span>{label}</span>
-                      {done ? (
-                        <Badge status="COMPLETED" />
-                      ) : state ? (
-                        <Badge status={state} />
+                      <span>{operationNames[operation]}</span>
+                      {stageStatus ? (
+                        <Badge status={stageStatus} />
+                      ) : reused ? (
+                        <span>Reutilizado</span>
                       ) : (
                         <span className="muted">Aguardando</span>
                       )}
                     </div>
                   );
                 })}
+                <div className="progress-step">
+                  <span>Concluído</span>
+                  {production?.status === 'COMPLETED' ? (
+                    <Badge status="COMPLETED" />
+                  ) : (
+                    <span className="muted">
+                      {production &&
+                      [
+                        'EMPTY',
+                        'CLIPS_REMOVED',
+                        'FAILED',
+                        'CANCELLED',
+                      ].includes(production.status)
+                        ? statusNames[production.status]
+                        : 'Aguardando'}
+                    </span>
+                  )}
+                </div>
               </div>
-              {chain.some((t) => t.error) && (
-                <p className="inline-error">
-                  {chain.find((t) => t.error)?.error}
+              {production?.message && (
+                <p
+                  className={
+                    production.status === 'FAILED' ? 'notice error' : 'notice'
+                  }
+                  role={production.status === 'FAILED' ? 'alert' : 'status'}
+                >
+                  {production.status === 'FAILED'
+                    ? `${operationNames[production.currentStage]}: `
+                    : ''}
+                  {production.message}
                 </p>
               )}
-              {pending && (
+              {production?.canRetry && (
                 <button
+                  type="button"
                   className="button secondary"
                   disabled={action.busy}
                   onClick={() =>
                     void action.run(async () => {
-                      await api(`jobs/${pending.id}/continue`, {});
+                      await api(`productions/${production.id}/retry`, {});
                       await refresh();
-                    }, 'Continuação solicitada.')
+                    }, '')
                   }
                 >
-                  Retomar fluxo automático
+                  Tentar novamente
                 </button>
               )}
-              {running && (
+              {rootActive && rootId && (
                 <button
+                  type="button"
                   className="button secondary"
                   disabled={action.busy}
                   onClick={() =>
                     void action.run(async () => {
-                      await api(`jobs/${root.id}/cancel`, {});
+                      await api(`jobs/${rootId}/cancel`, {});
                       await refresh();
-                    }, 'Produção cancelada. A etapa ativa pode terminar no worker, sem iniciar novas etapas.')
+                    }, '')
                   }
                 >
                   Cancelar produção
                 </button>
               )}
-              {root.operation === 'transcribe' &&
-                root.status === 'COMPLETED' &&
-                !root.autoRun && (
-                  <Link
-                    className="button primary"
-                    href="/biblioteca?aba=trechos"
-                    prefetch={false}
-                  >
-                    Revisar e selecionar trechos
-                  </Link>
-                )}
-              {results.length > 0 && (
-                <div className="notice success">
-                  <strong>{results.length} corte(s) pronto(s)</strong>
-                  <p>Abra a biblioteca para assistir e baixar.</p>
-                  <Link
-                    className="button primary"
-                    style={{ marginTop: 12 }}
-                    href={`/biblioteca?video=${results[0].id}`}
-                    prefetch={false}
-                  >
-                    Ver resultado
-                    <Icon name="arrow" size={16} />
-                  </Link>
+              {!!production?.clips.length && (
+                <div className="notice">
+                  <strong>
+                    {production.clips.length} corte(s) disponível(is)
+                  </strong>
+                  <p>
+                    <Link
+                      className="button secondary"
+                      href={`/biblioteca?video=${production.clips[0].id}`}
+                      prefetch={false}
+                    >
+                      Ver cortes na Biblioteca
+                    </Link>
+                  </p>
                 </div>
               )}
-              <Advanced
-                value={{ root, steps: chain }}
-                title="Detalhes técnicos da produção"
-              />
+              {production && (
+                <Advanced value={production} title="Detalhes técnicos" />
+              )}
             </>
           )}
         </aside>
       </div>
-      <section style={{ marginTop: 32 }}>
+      <section style={{ marginTop: 32 }} aria-label="Tarefas recentes">
         <div className="section-heading">
           <h2>Tarefas recentes</h2>
           <label>
-            <span className="filter-label">Status</span>
+            Status
             <select
               value={status}
               onChange={(e) => {
@@ -250,29 +244,30 @@ export default function CreateView({
               }}
             >
               <option value="">Todos</option>
-              {['QUEUED', 'PROCESSING', 'RETRYING', 'COMPLETED', 'FAILED'].map(
-                (s) => (
-                  <option key={s} value={s}>
-                    {statusNames[s]}
-                  </option>
-                ),
-              )}
+              {[
+                'QUEUED',
+                'PROCESSING',
+                'RETRYING',
+                'COMPLETED',
+                'FAILED',
+                'CANCELLED',
+                'EMPTY',
+                'CLIPS_REMOVED',
+              ].map((s) => (
+                <option key={s} value={s}>
+                  {statusNames[s]}
+                </option>
+              ))}
             </select>
           </label>
         </div>
         <div className="panel">
-          {list.items.length ? (
-            <TaskList tasks={list.items} sources={sources} />
+          {rows.items.length ? (
+            <ProductionList productions={rows.items} />
           ) : (
-            !loading &&
-            !error && (
-              <Empty
-                title="Nenhuma tarefa encontrada"
-                description="Inicie uma produção ou altere o filtro."
-              />
-            )
+            <p>Nenhuma produção nesta lista.</p>
           )}
-          <Pagination {...list} onChange={setPage} />
+          <Pagination {...rows} onChange={setPage} />
         </div>
       </section>
     </>

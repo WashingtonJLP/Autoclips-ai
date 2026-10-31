@@ -80,7 +80,10 @@ export default function Settings() {
             <h2>Configurações gerais</h2>
             <dl className="definition-list">
               <dt>Atualizações</dt>
-              <dd>Manuais, sem polling</dd>
+              <dd>
+                Automáticas durante produções ativas; sincronizadas após
+                exclusão e restauração
+              </dd>
               <dt>Publicação</dt>
               <dd>Somente simulação</dd>
               <dt>Acesso</dt>
@@ -126,6 +129,19 @@ export default function Settings() {
           </section>
         </aside>
       </div>
+      <section className="panel" style={{ marginTop: 24 }}>
+        <h2>Direitos de uso e acesso à mídia</h2>
+        <p>
+          Gerar cortes inicia o processamento solicitado pelo operador
+          autenticado. Essa operação não verifica nem concede direitos de
+          reutilização comercial ou publicação. Consulte a licença da origem e
+          obtenha as permissões necessárias para o uso pretendido.
+        </p>
+        <p>
+          DRM, autenticação da plataforma e restrições de acesso continuam sendo
+          respeitados. A publicação nas redes permanece em simulação.
+        </p>
+      </section>
     </>
   );
 }

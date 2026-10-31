@@ -102,8 +102,8 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
   for (const field of [
     'name="url"',
     'Gerar cortes',
-    'Colar link',
-    'Escolher vídeo',
+    'Colar URL',
+    'Escolher vídeo existente',
     'Enviar arquivo',
   ])
     assert.ok(html.includes(field));
@@ -113,6 +113,10 @@ test('formulário cria por mídia sem cadastro de fonte nem caminhos internos', 
     'name="license"',
     'name="evidenceUrl"',
     'Fonte autorizada',
+    'Tenho autorização',
+    'Você pode usar este vídeo?',
+    'Tenho autorização',
+    'Você pode usar este vídeo?',
   ])
     assert.ok(!html.includes(field));
   assert.ok(html.includes('continuam automaticamente'));
@@ -153,18 +157,18 @@ test('análise distingue metadados de importação e oferece original sem formul
     <MediaAnalysis asset={base} onUpload={() => {}} />,
   );
   for (const text of [
-    'Apenas metadados',
-    'YouTube',
+    'Arquivo não disponível',
+    'youtube',
     'Canal',
     '2:05',
     'Miniatura',
-    'Enviar o original autorizado',
+    'Enviar arquivo',
   ])
     assert.ok(blocked.includes(text));
   assert.ok(
     blocked.includes('&lt;script&gt;') && !blocked.includes('<script>'),
   );
-  assert.ok(blocked.includes('vincule um original autorizado'));
+  assert.ok(!blocked.includes('Tenho autorização'));
   const imported = renderToStaticMarkup(
     <MediaAnalysis
       asset={{
@@ -177,7 +181,7 @@ test('análise distingue metadados de importação e oferece original sem formul
   );
   assert.ok(
     imported.includes('Arquivo já importado') &&
-      !imported.includes('Enviar o original autorizado'),
+      !imported.includes('Enviar arquivo'),
   );
 });
 

@@ -77,9 +77,9 @@ test('YouTube apresenta metadados e oferece tentativa direta sem exigir Creative
     assert.equal(result.title, 'Meu vídeo');
     assert.equal(result.author, 'Meu canal');
     assert.ok(result.thumbnailUrl);
-    assert.equal(result.availability.kind, 'permission_required');
+    assert.equal(result.availability.kind, 'available');
     assert.ok(!result.reason?.includes('YOUTUBE_API_KEY'));
-    assert.match(result.availability.message, /direitos/);
+    assert.match(result.availability.message, /integridade/);
     assert.equal(
       result.mediaUrl,
       'https://www.youtube.com/watch?v=jNQXAC9IVRw',
@@ -123,7 +123,7 @@ test('disponibilidade separa mídia de autorização e miniaturas rejeitam URLs 
     rightsConfirmed: false,
     metadata: {},
   };
-  assert.equal(describeMedia(base).availability.kind, 'permission_required');
+  assert.equal(describeMedia(base).availability.kind, 'available');
   assert.equal(
     describeMedia({ ...base, rightsConfirmed: true }).availability.kind,
     'available',

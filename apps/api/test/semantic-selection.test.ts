@@ -403,6 +403,6 @@ test('busca temática encaminha critérios e fallback somente para candidatos el
   await service.run('topic');
   assert.deepEqual(forwarded, {
     assetId: 'authorized',
-    options: automation.config.options,
+    options: { ...automation.config.options, burnSubtitles: true },
   });
 });

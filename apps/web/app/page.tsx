@@ -1,31 +1,21 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useResources } from './shared/api';
-import { Task, Platforms, Source, active } from './shared/models';
+import { Task, Platforms, Library, active } from './shared/models';
 import { PageHeader, Feedback, Empty, Refresh } from './components/ui';
 import ClipCard from './components/clip-card';
 import Preview from './components/preview';
-import TaskList from './components/task-list';
+import ProductionList from './components/production-list';
 import Icon from './components/glyph';
 export default function Overview() {
   const { data, loading, error, refresh } = useResources([
-    'jobs',
-    'sources',
     'platforms',
     'health',
     'library',
   ]);
-  const tasks = ((data.jobs ?? []) as Task[]).filter(
-      (t) =>
-        !t.testContent &&
-        ['download', 'transcribe', 'select', 'clip'].includes(t.operation),
-    ),
-    sources = (data.sources ?? []) as Source[],
-    platforms = data.platforms as Platforms | undefined;
-  const library = data.library as
-    | { productions: { testContent: boolean; status: string }[]; clips: Task[] }
-    | undefined;
+  const platforms = data.platforms as Platforms | undefined;
+  const library = data.library as Library | undefined;
   const productions = (library?.productions ?? []).filter(
     (p) => !p.testContent,
   );
@@ -37,7 +27,7 @@ export default function Overview() {
     ['Produções', productions.length, 'Suas produções', 'video'],
     [
       'Em andamento',
-      productions.filter((p) => active(p as Task)).length,
+      productions.filter((p) => active({ status: p.status } as Task)).length,
       'Produções na fila ou processando',
       'clock',
     ],
@@ -50,6 +40,20 @@ export default function Overview() {
       'publish',
     ],
   ] as const;
+  const running = productions.some(
+    (p) => p.hasActive || active({ status: p.status } as Task),
+  );
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [running, refresh]);
+  useEffect(() => {
+    if (preview && !clips.some((clip) => clip.id === preview.id))
+      setPreview(null);
+  }, [clips, preview]);
   return (
     <>
       <PageHeader
@@ -63,7 +67,7 @@ export default function Overview() {
           Criar cortes
         </Link>
       </PageHeader>
-      <Feedback error={error} loading={loading} />
+      <Feedback error={error} loading={loading && !data.library} />
       <section className="metrics-grid" aria-label="Indicadores recentes">
         {metrics.map(([label, value, note, icon]) => (
           <article className="metric" key={label}>
@@ -73,7 +77,7 @@ export default function Overview() {
                 <Icon name={icon} />
               </span>
             </div>
-            <strong>{loading && !data.jobs ? '—' : value}</strong>
+            <strong>{loading && !data.library ? '—' : value}</strong>
             <p>{note}</p>
           </article>
         ))}
@@ -131,8 +135,8 @@ export default function Overview() {
               Ver tarefas →
             </Link>
           </div>
-          {tasks.length ? (
-            <TaskList tasks={tasks.slice(0, 4)} sources={sources} />
+          {productions.length ? (
+            <ProductionList productions={productions.slice(0, 4)} />
           ) : (
             <p className="muted">Nenhuma atividade registrada.</p>
           )}
@@ -159,7 +163,7 @@ export default function Overview() {
           </div>
           <p className="muted small">
             Atualização manual. Os indicadores abrangem os últimos 100
-            registros.
+            producoes.
           </p>
           <Link href="/configuracoes" className="text-link" prefetch={false}>
             Ver informações do sistema →

@@ -2,7 +2,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, useAction, useResources } from '../shared/api';
-import { Task, paginate, date } from '../shared/models';
+import {
+  Task,
+  paginate,
+  date,
+  Library,
+  operationNames,
+} from '../shared/models';
 import {
   PageHeader,
   Refresh,
@@ -13,17 +19,6 @@ import {
 } from '../components/ui';
 import ClipCard from '../components/clip-card';
 import Preview from '../components/preview';
-type Production = {
-  id: string;
-  title: string;
-  createdAt: string;
-  testContent: boolean;
-  status: string;
-  error: string | null;
-  clips: Task[];
-  steps: { id: string; operation: string; status: string }[];
-};
-type Library = { productions: Production[]; clips: Task[] };
 export default function LibraryView({
   initialTab,
   initialVideo,
@@ -53,10 +48,15 @@ export default function LibraryView({
     if (focused?.status === 'COMPLETED') {
       setPreview(focused);
       setScope(focused.testContent ? 'test' : 'real');
-    }
+    } else if (initialVideo) setPreview(null);
   }, [focused?.id]);
-  const running = content.productions.some((p) =>
-    ['QUEUED', 'PROCESSING', 'RETRYING'].includes(p.status),
+  useEffect(() => {
+    if (preview && !content.clips.some((clip) => clip.id === preview.id))
+      setPreview(null);
+  }, [content.clips, preview]);
+  const running = content.productions.some(
+    (p) =>
+      p.hasActive || ['QUEUED', 'PROCESSING', 'RETRYING'].includes(p.status),
   );
   useEffect(() => {
     if (!running) return;
@@ -111,7 +111,7 @@ export default function LibraryView({
       <Feedback
         error={error || action.error}
         message={action.message}
-        loading={loading}
+        loading={loading && !data.library}
       />
       <div className="tabs" aria-label="Conteúdo da biblioteca">
         {[
@@ -173,6 +173,8 @@ export default function LibraryView({
             <option value="COMPLETED">Concluído</option>
             <option value="FAILED">Falhou</option>
             <option value="CANCELLED">Cancelado</option>
+            <option value="EMPTY">Nenhum trecho elegível</option>
+            <option value="CLIPS_REMOVED">Cortes excluídos</option>
           </select>
         </label>
       </div>
@@ -261,6 +263,8 @@ export default function LibraryView({
                 corte(s) pronto(s)
               </p>
               {p.error && <p className="inline-error">{p.error}</p>}
+              {!p.error && p.message && <p>{p.message}</p>}
+              <p className="muted small">{operationNames[p.currentStage]}</p>
               <div className="row">
                 <Link
                   className="button secondary"

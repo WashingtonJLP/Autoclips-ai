@@ -53,6 +53,15 @@ export default function ClipCard({
             Excluir corte
           </button>
         )}
+        {task.status === 'COMPLETED' && !!task.result?.subtitle_path && (
+          <a
+            className="button subtle"
+            href={`/api/backend/jobs/${task.id}/artifacts/subtitles`}
+            download
+          >
+            Baixar SRT
+          </a>
+        )}
       </div>
     </article>
   );

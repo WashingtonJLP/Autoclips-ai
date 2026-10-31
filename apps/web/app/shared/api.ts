@@ -1,6 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+export function announceResourcesChanged() {
+  window.dispatchEvent(new Event('autoclips:resources'));
+  localStorage.setItem('autoclips:resources', `${Date.now()}-${Math.random()}`);
+}
 
 export async function api<T>(
   path: string,
@@ -33,6 +38,7 @@ export async function api<T>(
               .join('; ') || 'Confira os campos e tente novamente.'
           : 'Confira os campos e tente novamente.',
     );
+  if (body !== undefined) announceResourcesChanged();
   return data as T;
 }
 
@@ -41,8 +47,10 @@ export function useResources(paths: string[]) {
   const [data, setData] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const sequence = useRef(0);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
+      const request = ++sequence.current;
       setLoading(true);
       setError('');
       try {
@@ -55,16 +63,17 @@ export function useResources(paths: string[]) {
                 [path, await api(path, undefined, signal)] as const,
             ),
         );
-        if (!signal?.aborted) setData(Object.fromEntries(entries));
+        if (!signal?.aborted && request === sequence.current)
+          setData(Object.fromEntries(entries));
       } catch (e) {
-        if (!signal?.aborted)
+        if (!signal?.aborted && request === sequence.current)
           setError(
             e instanceof Error
               ? e.message
               : 'Não foi possível carregar os dados.',
           );
       } finally {
-        if (!signal?.aborted) setLoading(false);
+        if (!signal?.aborted && request === sequence.current) setLoading(false);
       }
     },
     [key],
@@ -74,10 +83,35 @@ export function useResources(paths: string[]) {
     void refresh(controller.signal);
     return () => controller.abort();
   }, [refresh]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (document.visibilityState === 'visible') void refresh();
+      }, 150);
+    };
+    const visible = () => {
+      if (document.visibilityState === 'visible') changed();
+    };
+    const storage = (event: StorageEvent) => {
+      if (event.key === 'autoclips:resources') changed();
+    };
+    window.addEventListener('autoclips:resources', changed);
+    window.addEventListener('storage', storage);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('autoclips:resources', changed);
+      window.removeEventListener('storage', storage);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [refresh]);
   return { data, loading, error, refresh };
 }
 
 export function useAction() {
+  const locked = useRef(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState('');
@@ -85,6 +119,8 @@ export function useAction() {
     operation: () => Promise<T>,
     success: string,
   ): Promise<T | undefined> {
+    if (locked.current) return;
+    locked.current = true;
     setBusy(true);
     setError('');
     setMessage('');
@@ -99,6 +135,7 @@ export function useAction() {
           : 'Não foi possível concluir a operação.',
       );
     } finally {
+      locked.current = false;
       setBusy(false);
     }
   }

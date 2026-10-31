@@ -7,7 +7,7 @@ import { PrismaClient, Task } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { jobSchema, parse } from '../contracts';
+import { jobSchema, parse, canProcessSource } from '../contracts';
 import {
   readSelectionConfig,
   transcriptSchema,
@@ -71,7 +71,7 @@ export class SelectionPipeline {
       task.status !== 'COMPLETED'
     )
       throw new NotFoundException('Transcrição concluída não encontrada');
-    if (!task.source.commercialUseVerified)
+    if (!canProcessSource(task.source))
       throw new BadRequestException('Autorização comercial ausente');
     const transcript = transcriptSchema.parse(task.result);
     const payload = parse(jobSchema, {
@@ -97,6 +97,7 @@ export class SelectionPipeline {
       path,
       transcript,
       selectionPolicy(effectiveConfig),
+      effectiveConfig.burnSubtitles,
       !(this.provider instanceof UnavailableProvider),
       editorial?.reprocess ? task.id : null,
     ])}`;
@@ -279,7 +280,12 @@ export class SelectionPipeline {
       segments: captionSegments(transcript).filter(
         (s) => s.start < candidate.end && s.end > candidate.start,
       ),
-      burn_subtitles: true,
+      burn_subtitles:
+        (
+          selection.editorial as {
+            options?: { burnSubtitles?: boolean };
+          } | null
+        )?.options?.burnSubtitles ?? true,
     };
     parse(jobSchema, {
       sourceId: task.sourceId,
@@ -289,6 +295,11 @@ export class SelectionPipeline {
     let clip: Task;
     try {
       clip = await selectionTransaction(this.db, async (tx) => {
+        const current = await tx.task.findUnique({
+          where: { id: selection.id },
+        });
+        if (current?.deletedAt || current?.status === 'CANCELLED')
+          throw new BadRequestException('Produção excluída ou cancelada');
         const exact = await tx.task.findUnique({ where: { renderKey } });
         if (exact) return exact;
         const previous = await tx.task.findMany({

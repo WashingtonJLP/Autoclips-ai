@@ -37,7 +37,14 @@ def input_path(relative: str) -> Path:
 @contextmanager
 def sequential():
     if not processing_lock.acquire(blocking=False):
-        raise HTTPException(429, "Worker ocupado", headers={"Retry-After": "5"})
+        raise HTTPException(
+            429,
+            {
+                "code": "WORKER_BUSY",
+                "message": "Outra etapa está em execução. A produção aguarda o worker.",
+            },
+            headers={"Retry-After": "5"},
+        )
     try:
         yield
     finally:

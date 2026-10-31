@@ -28,7 +28,7 @@ export function PageHeader({
 export function Badge({ status }: { status: string }) {
   return (
     <span
-      className={`badge ${status === 'FAILED' ? 'danger' : ['PROCESSING', 'RETRYING', 'SCHEDULED', 'QUEUED'].includes(status) ? 'warning' : 'success'}`}
+      className={`badge ${status === 'FAILED' ? 'danger' : ['PROCESSING', 'RETRYING', 'SCHEDULED', 'QUEUED', 'EMPTY', 'CLIPS_REMOVED', 'CANCELLED'].includes(status) ? 'warning' : 'success'}`}
     >
       {statusNames[status] ?? status}
     </span>
@@ -50,7 +50,7 @@ export function Feedback({
           {error}
         </p>
       )}
-      {message && (
+      {message && !error && (
         <p className="notice success" role="status">
           {message}
         </p>

@@ -52,6 +52,29 @@ export type Publication = {
   scheduledAt: string;
   result?: unknown;
 };
+export type Production = {
+  id: string;
+  title: string;
+  createdAt: string;
+  testContent: boolean;
+  status: string;
+  error: string | null;
+  message?: string | null;
+  currentStage: string;
+  startOperation?: string;
+  canRetry: boolean;
+  hasActive?: boolean;
+  options?: Record<string, unknown>;
+  assetId?: string;
+  clips: Task[];
+  steps: {
+    id: string;
+    operation: string;
+    status: string;
+    error?: string | null;
+  }[];
+};
+export type Library = { productions: Production[]; clips: Task[] };
 export type Platforms = {
   mode: string;
   realPublishingEnabled: boolean;
@@ -78,12 +101,14 @@ export const statusNames: Record<string, string> = {
   CANCELLED: 'Cancelado',
   SCHEDULED: 'Agendado',
   SIMULATED: 'Simulado',
+  EMPTY: 'Nenhum trecho elegível',
+  CLIPS_REMOVED: 'Cortes excluídos',
 };
 export const operationNames: Record<string, string> = {
-  download: 'Coleta de mídia',
-  transcribe: 'Transcrição',
-  select: 'Seleção de trechos',
-  clip: 'Corte vertical',
+  download: 'Obtendo vídeo',
+  transcribe: 'Transcrevendo áudio',
+  select: 'Selecionando melhores momentos',
+  clip: 'Renderizando cortes',
 };
 export const active = (task: Task) =>
   ['QUEUED', 'PROCESSING', 'RETRYING'].includes(task.status);
