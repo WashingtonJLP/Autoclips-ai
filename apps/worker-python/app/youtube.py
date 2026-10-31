@@ -2,11 +2,16 @@
 
 import re
 import subprocess
+import time
+import urllib.error
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import HTTPException
 from yt_dlp import YoutubeDL
+from yt_dlp.downloader.http import HttpFD
+from yt_dlp.networking.common import Response
+from yt_dlp.networking.exceptions import HTTPError, TransportError
 from yt_dlp.utils import DownloadError
 
 from app.downloads import public_response, validate_url
@@ -113,6 +118,86 @@ class PublicYouTube(YoutubeDL):
         return super().urlopen(request)
 
 
+class TransferBudget:
+    def __init__(self):
+        self.received = 0
+        self.deadline = time.monotonic() + 590
+
+    def check(self, size=0):
+        if time.monotonic() > self.deadline:
+            raise HTTPException(504, "Tempo de download excedido")
+        if self.received + size > LIMIT:
+            raise HTTPException(413, "Download excede 512 MB")
+
+
+class MediaResponse(Response):
+    def __init__(self, response, budget):
+        super().__init__(response, response.geturl(), dict(response.headers), response.status)
+        self.budget = budget
+        try:
+            budget.check(int(self.headers.get("Content-Length", "0")))
+        except (HTTPException, ValueError):
+            self.close()
+            raise
+
+    def read(self, amt=None):
+        self.budget.check()
+        chunk = self.fp.read(min(amt or 1024**2, 1024**2))
+        self.budget.check(len(chunk))
+        self.budget.received += len(chunk)
+        return chunk
+
+
+class MediaDownloader(YoutubeDL):
+    """HttpFD conserva Range/blocos; o transporte mantém DNS fixo e TLS validado."""
+
+    def __init__(self, url, budget):
+        super().__init__(
+            {
+                "quiet": True,
+                "no_warnings": True,
+                "noprogress": True,
+                "retries": 0,
+                "continuedl": False,
+                "nopart": True,
+                "max_filesize": LIMIT,
+                "cachedir": False,
+                "proxy": "",
+                "geo_bypass": False,
+            },
+            auto_init=False,
+        )
+        self.allowed_url = google_media(url)
+        self.budget = budget
+
+    def urlopen(self, request):
+        self.budget.check()
+        if request.url != self.allowed_url or request.method != "GET" or request.data is not None:
+            raise HTTPException(400, "Requisição de mídia não autorizada")
+        # Somente cabeçalhos necessários ao downloader. Nunca cookies ou credenciais.
+        allowed_headers = {
+            "user-agent",
+            "accept",
+            "accept-language",
+            "sec-fetch-mode",
+            "range",
+            "if-range",
+        }
+        headers = {k: v for k, v in request.headers.items() if k.lower() in allowed_headers}
+        byte_range = next((v for k, v in headers.items() if k.lower() == "range"), None)
+        if byte_range is not None and not re.fullmatch(r"bytes=\d+-\d*", byte_range):
+            raise HTTPException(400, "Intervalo de mídia inválido")
+        try:
+            # Cada bloco recebe validação de DNS/IP e conexão fixada no endereço validado.
+            # Redirects são recusados: o downloader só pode abrir a URL selecionada.
+            response = public_response(self.allowed_url, True, headers=headers)
+            return MediaResponse(response, self.budget)
+        except urllib.error.HTTPError as exc:
+            raise HTTPError(Response(exc, exc.geturl(), dict(exc.headers), exc.code)) from exc
+        except urllib.error.URLError as exc:
+            raise TransportError(cause=exc) from exc
+
+
 def run(request, output):
     url = canonical_url(request.url)
     try:
@@ -136,20 +221,17 @@ def run(request, output):
         ) as extractor:
             info = extractor.extract_info(url, download=False)
         selected = formats_for(info)
-        total = 0
+        budget = TransferBudget()
+        if sum(media.get("filesize") or 0 for media in selected) > LIMIT:
+            raise HTTPException(413, "Download excede 512 MB")
         inputs = []
         for index, media in enumerate(selected):
             path = Path(output).parent / f"stream-{index}.media"
-            # Cada destino é validado e fixado em IP público, inclusive redirects.
-            with public_response(google_media(media["url"]), True, True) as response:
-                if int(response.headers.get("Content-Length", "0")) + total > LIMIT:
-                    raise HTTPException(413, "Download excede 512 MB")
-                with path.open("xb") as file:
-                    while chunk := response.read(1024**2):
-                        total += len(chunk)
-                        if total > LIMIT:
-                            raise HTTPException(413, "Download excede 512 MB")
-                        file.write(chunk)
+            with MediaDownloader(media["url"], budget) as downloader:
+                # Preserva http_headers e downloader_options.http_chunk_size do extrator.
+                success, _ = HttpFD(downloader, downloader.params).download(str(path), media)
+                if not success or not path.is_file() or not path.stat().st_size:
+                    raise HTTPException(503, "Não foi possível baixar o formato do YouTube")
             inputs += ["-protocol_whitelist", "file,pipe", "-i", str(path)]
         mapping = ["-map", "0:v:0", "-map", "1:a:0" if len(selected) == 2 else "0:a:0"]
         subprocess.run(

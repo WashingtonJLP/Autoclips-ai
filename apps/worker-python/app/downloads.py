@@ -168,7 +168,7 @@ def download(request: DownloadRequest) -> dict:
     return {"path": relative(target), "sha256": digest.hexdigest()}
 
 
-def public_response(url, authorized, redirects=False, *, address=None):
+def public_response(url, authorized, redirects=False, *, address=None, headers=None):
     """Redirects oficiais limitados; cada destino recebe DNS/IP/TLS novos e validados."""
     from urllib.parse import urljoin
 
@@ -186,7 +186,12 @@ def public_response(url, authorized, redirects=False, *, address=None):
         try:
             return opener.open(
                 urllib.request.Request(
-                    url, headers={"User-Agent": "AutoClipsAI/0.1", "Accept-Encoding": "identity"}
+                    url,
+                    headers={
+                        "User-Agent": "AutoClipsAI/0.1",
+                        **(headers or {}),
+                        "Accept-Encoding": "identity",
+                    },
                 ),
                 timeout=30,
             )

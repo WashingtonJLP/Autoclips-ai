@@ -1,10 +1,12 @@
 import io
 import socket
+import time
 from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
 from fastapi import HTTPException
+from yt_dlp.networking import Request
 from yt_dlp.utils import DownloadError
 
 from app import youtube
@@ -102,6 +104,8 @@ def test_media_hosts_cannot_escape():
 
 
 def test_download_selected_formats_and_remux_locally(tmp_path, monkeypatch):
+    calls = []
+
     class Extractor:
         def __init__(self, options):
             assert options["geo_bypass"] is False
@@ -115,22 +119,46 @@ def test_download_selected_formats_and_remux_locally(tmp_path, monkeypatch):
 
         def extract_info(self, url, download):
             assert download is False
-            return info()
+            return info(
+                formats=[
+                    info()["formats"][0]
+                    | {
+                        "filesize": 8,
+                        "http_headers": {"User-Agent": "extractor-test"},
+                        "downloader_options": {"http_chunk_size": 3},
+                    }
+                ]
+            )
 
     monkeypatch.setattr(youtube, "PublicYouTube", Extractor)
-    monkeypatch.setattr(youtube, "public_response", lambda *a: io.BytesIO(b"video"))
 
-    # BytesIO não possui headers; resposta mínima mantém o contrato HTTP.
     class Response(io.BytesIO):
-        def __init__(self, data):
+        def __init__(self, data, start, end):
             super().__init__(data)
-            self.headers = {"Content-Length": "5"}
+            self.status = 206
+            self.headers = {
+                "Content-Length": str(len(data)),
+                "Content-Range": f"bytes {start}-{end}/8",
+            }
 
-    monkeypatch.setattr(youtube, "public_response", lambda *a: Response(b"video"))
+        def geturl(self):
+            return info()["formats"][0]["url"]
+
+    def opened(url, authorized, *, headers):
+        assert url == info()["formats"][0]["url"]
+        assert authorized is True
+        assert headers["User-Agent"] == "extractor-test"
+        start, end = map(int, headers["Range"].removeprefix("bytes=").split("-"))
+        assert end - start + 1 <= 3
+        calls.append((start, end))
+        return Response(b"video123"[start : end + 1], start, end)
+
+    monkeypatch.setattr(youtube, "public_response", opened)
 
     def ffmpeg(args, **kwargs):
         assert "copy" in args
         assert args[args.index("-i") + 1] == str(tmp_path / "stream-0.media")
+        assert (tmp_path / "stream-0.media").read_bytes() == b"video123"
         Path(args[-1]).write_bytes(b"mp4")
         return CompletedProcess(args, 0)
 
@@ -140,6 +168,61 @@ def test_download_selected_formats_and_remux_locally(tmp_path, monkeypatch):
     )
     youtube.run(request, str(tmp_path / "out.mp4"))
     assert (tmp_path / "out.mp4").read_bytes() == b"mp4"
+    assert len(calls) >= 3, "O downloader real deve respeitar os blocos do extrator"
+
+
+def test_native_downloader_keeps_network_scope_and_drops_credentials(monkeypatch):
+    media_url = info()["formats"][0]["url"]
+    budget = youtube.TransferBudget()
+    with youtube.MediaDownloader(media_url, budget) as downloader:
+        for request in [
+            Request("https://example.org/file.mp4"),
+            Request(media_url, method="POST", data=b"body"),
+            Request(media_url, headers={"range": "bytes=invalid"}),
+        ]:
+            with pytest.raises(HTTPException):
+                downloader.urlopen(request)
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("127.0.0.1", 443))]
+        )
+        with pytest.raises(HTTPException) as private:
+            downloader.urlopen(Request(media_url))
+        assert private.value.status_code == 400
+
+        def opened(url, authorized, *, headers):
+            assert not any(k.lower() in {"authorization", "cookie"} for k in headers)
+            raise HTTPException(400, "Destino bloqueado pelo transporte")
+
+        monkeypatch.setattr(youtube, "public_response", opened)
+        with pytest.raises(HTTPException):
+            downloader.urlopen(
+                Request(media_url, headers={"Cookie": "secret", "Authorization": "Bearer secret"})
+            )
+
+
+def test_budget_is_shared_across_formats_and_chunks(monkeypatch):
+    class Response(io.BytesIO):
+        status = 200
+        headers = None
+
+        def __init__(self):
+            super().__init__(b"abcd")
+            self.headers = {"Content-Length": "4"}
+
+        def geturl(self):
+            return info()["formats"][0]["url"]
+
+    monkeypatch.setattr(youtube, "LIMIT", 7)
+    budget = youtube.TransferBudget()
+    with youtube.MediaResponse(Response(), budget) as response:
+        assert response.read(4) == b"abcd"
+    with pytest.raises(HTTPException) as error:
+        youtube.MediaResponse(Response(), budget)
+    assert error.value.status_code == 413
+    budget.deadline = time.monotonic() - 1
+    with pytest.raises(HTTPException) as error:
+        budget.check()
+    assert error.value.status_code == 504
 
 
 def test_imported_youtube_reused_without_network(tmp_path, monkeypatch):

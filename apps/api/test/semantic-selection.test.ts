@@ -215,6 +215,56 @@ test('falha de rede não repete consumo desconhecido; fallback é opcional e ide
   assert.ok(fallback.clips.length);
   assert.equal(ledger.reservations.length, 0);
 });
+test('provedor indisponível permite fallback de transcrição longa sem preparar blocos de IA', async () => {
+  const longTranscript = {
+    duration: 1200,
+    segments: Array.from({ length: 120 }, (_, i) => ({
+      start: i * 10,
+      end: i * 10 + 9,
+      text: `Como entender este exemplo ${i}? A explicação mostra uma informação útil e completa sobre o funcionamento do sistema.`,
+    })),
+  };
+  const limits = {
+    ...config,
+    maxInputTokens: 4000,
+    maxChunks: 1,
+    fallback: 'heuristic' as const,
+  };
+  const ledger = new Ledger();
+  const result = await new SelectionService(
+    new UnavailableProvider('gemini', 'Envio externo desativado'),
+    ledger,
+    limits,
+  ).select('long-fallback', longTranscript);
+  assert.equal(result.provider, 'heuristic');
+  assert.ok(result.clips.length);
+  assert.equal(result.semanticAnalysis, false);
+  assert.equal(ledger.reservations.length, 0);
+  const available = new Provider();
+  await assert.rejects(
+    () =>
+      new SelectionService(available, ledger, {
+        ...limits,
+        fallback: 'none',
+      }).select('long-real-provider', longTranscript),
+    /máximo de blocos/,
+  );
+  assert.equal(
+    available.calls,
+    0,
+    'Limites continuam bloqueando o provedor real',
+  );
+  const capacityFallback = await new SelectionService(
+    available,
+    ledger,
+    limits,
+  ).select('long-capacity-fallback', longTranscript);
+  assert.equal(capacityFallback.provider, 'heuristic');
+  assert.ok(capacityFallback.clips.length);
+  assert.equal(available.calls, 0);
+  assert.equal(ledger.reservations.length, 0);
+});
+
 test('limites de orçamento impedem chamadas e novas tentativas, mesmo com fallback habilitado', async () => {
   const p = new Provider();
   await assert.rejects(

@@ -88,7 +88,9 @@ export function chunksFor(
       );
     chunks.push(chunk);
     if (chunks.length > config.maxChunks)
-      throw new SelectionError('Transcrição excede o máximo de blocos');
+      throw new LlmUnavailableError(
+        'Transcrição excede o máximo de blocos configurado para a IA',
+      );
     if (end === segments.length) break;
     let overlap = end - 1;
     while (
@@ -247,9 +249,9 @@ export class SelectionService {
       warnings.push(
         'Nenhuma frase completa foi reconhecida para análise. Nenhuma chamada à IA foi enviada.',
       );
-    const chunks = chunksFor(segments, this.config);
-    if (chunks.length && this.provider instanceof UnavailableProvider)
+    if (segments.length && this.provider instanceof UnavailableProvider)
       throw new LlmUnavailableError(this.provider.reason);
+    const chunks = chunksFor(segments, this.config);
     const requests = chunks.map((chunk) => makeRequest(chunk, this.config));
     const reservations = requests.map((request, index) => {
       const inputTokens = estimateInput(request),
