@@ -15,6 +15,7 @@ import type { Pipeline } from './pipeline';
 import { UnavailableProvider } from './selection/provider';
 import { criteriaSchema, selectionPolicy } from './selection/contracts';
 import { selectionTransaction } from './selection/ledger';
+import { youtubeVideoId } from './youtube-url';
 
 const originalRequest = z
   .object({
@@ -97,6 +98,8 @@ export function describeMedia<
     catalog?: unknown;
     metadataUnavailable?: boolean;
     authorizedOriginal?: { method?: string };
+    acquisition?: { method?: string };
+    originalDiscovery?: string;
   };
   const kind = asset.path
     ? 'imported'
@@ -109,15 +112,21 @@ export function describeMedia<
     kind === 'imported'
       ? 'O arquivo já está importado. Vamos reutilizá-lo, sem baixar novamente.'
       : kind === 'available'
-        ? metadata.authorizedOriginal?.method === 'rights-holder-url'
-          ? 'Original externo autorizado vinculado. Vamos importar desse endereço, sem extrair mídia do YouTube.'
-          : 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
+        ? metadata.acquisition?.method === 'commons-youtube'
+          ? 'Encontramos uma versão licenciada deste vídeo no Wikimedia Commons. Vamos importar o arquivo dessa versão e registrar licença e créditos automaticamente.'
+          : metadata.authorizedOriginal?.method === 'rights-holder-url'
+            ? 'Original externo autorizado vinculado. Vamos importar desse endereço, sem extrair mídia do YouTube.'
+            : 'Arquivo disponível para importação automática. O acesso e a integridade serão conferidos no processamento.'
         : kind === 'permission_required'
           ? 'O arquivo pode ser importado. Se não houver permissão registrada, confirme que possui os direitos para este vídeo.'
           : asset.platform === 'twitch' && metadata.metadataUnavailable
             ? 'A conexão com a Twitch ainda não está configurada. Envie o original autorizado para continuar.'
             : asset.platform === 'youtube'
-              ? 'O YouTube fornece os metadados, mas a Data API não entrega o arquivo. Vincule um original autorizado por HTTPS, escolha um arquivo já importado ou envie o original.'
+              ? metadata.originalDiscovery === 'ambiguous'
+                ? 'Encontramos várias versões possíveis. Para usar a versão correta, vincule o original autorizado deste vídeo.'
+                : metadata.originalDiscovery === 'unavailable'
+                  ? 'Não foi possível consultar o catálogo de originais licenciados agora. Tente analisar novamente ou vincule um original autorizado.'
+                  : 'Não encontramos um arquivo autorizado correspondente. Vincule um original por HTTPS, escolha um arquivo já importado ou envie o original autorizado. A Data API do YouTube não fornece o arquivo.'
               : asset.platform === 'twitch'
                 ? 'O arquivo não está disponível com o acesso atual à Twitch. Use um clip com permissão oficial de download ou envie o original autorizado.'
                 : asset.platform === 'vimeo'
@@ -483,7 +492,11 @@ export class Production {
                   .authorizedOriginal?.method === 'rights-holder-url')
                 ? { public_file_authorized: true }
                 : {}),
-              ...(asset.platform === 'commons' && catalog?.evidence?.sha1
+              ...((asset.platform === 'commons' ||
+                (asset.platform === 'youtube' &&
+                  (asset.metadata as { acquisition?: { method?: string } })
+                    .acquisition?.method === 'commons-youtube')) &&
+              catalog?.evidence?.sha1
                 ? { expected_sha1: catalog.evidence.sha1 }
                 : {}),
             },
@@ -572,18 +585,8 @@ export class Production {
 export function sameResource(a: string, b: string) {
   const canonical = (value: string) => {
     const u = normalizedUrl(value);
-    if (
-      ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(
-        u.hostname,
-      )
-    ) {
-      const id =
-        u.hostname === 'youtu.be'
-          ? u.pathname.slice(1)
-          : (u.searchParams.get('v') ??
-            u.pathname.match(/^\/(?:shorts|embed)\/([^/]+)$/)?.[1]);
-      if (id && /^[\w-]{11}$/.test(id)) return `youtube:${id}`;
-    }
+    const id = youtubeVideoId(u);
+    if (id) return `youtube:${id}`;
     if (u.hostname === 'commons.wikimedia.org')
       return `commons:${decodeURIComponent(u.pathname).replaceAll('_', ' ')}`;
     return u.href;

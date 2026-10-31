@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Discovery, Discovered } from './discovery';
+import { youtubeHosts, youtubeVideoId } from './youtube-url';
 
 export type Candidate = {
   identity: string;
@@ -53,19 +54,10 @@ export function identityForUrl(value: string) {
   const url = normalizedUrl(value);
   let platform = 'direct',
     id = url.href;
-  if (
-    ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(
-      url.hostname,
-    )
-  ) {
+  if (youtubeHosts.has(url.hostname)) {
     platform = 'youtube';
-    id =
-      url.hostname === 'youtu.be'
-        ? url.pathname.slice(1)
-        : (url.searchParams.get('v') ??
-          url.pathname.match(/^\/(?:shorts|embed)\/([^/]+)$/)?.[1] ??
-          '');
-    if (!/^[\w-]{11}$/.test(id)) return;
+    id = youtubeVideoId(url) ?? '';
+    if (!id) return;
   } else if (
     ['twitch.tv', 'www.twitch.tv', 'clips.twitch.tv'].includes(url.hostname)
   ) {
@@ -158,21 +150,13 @@ function blocked(
 }
 export class YouTubeConnector implements Connector {
   readonly platform = 'youtube';
+  constructor(private readonly discovery = new Discovery()) {}
   matches(u: URL) {
-    return [
-      'youtube.com',
-      'www.youtube.com',
-      'm.youtube.com',
-      'youtu.be',
-    ].includes(u.hostname);
+    return youtubeHosts.has(u.hostname);
   }
   async resolve(u: URL) {
-    const id =
-      u.hostname === 'youtu.be'
-        ? u.pathname.slice(1)
-        : (u.searchParams.get('v') ??
-          u.pathname.match(/^\/(?:shorts|embed)\/([^/]+)$/)?.[1]);
-    if (!id || !/^[\w-]{11}$/.test(id))
+    const id = youtubeVideoId(u);
+    if (!id)
       throw new BadRequestException('Informe um link de vídeo do YouTube');
     const item = blocked(
       this.platform,
@@ -215,6 +199,35 @@ export class YouTubeConnector implements Connector {
         author: data.author_name,
         metadata: { thumbnailUrl: thumbnailUrl(data.thumbnail_url) },
       });
+    }
+    try {
+      const original = await this.discovery.youtubeOriginal(id);
+      item.metadata.originalDiscovery = original.status;
+      if (original.candidate) {
+        const catalog = original.candidate;
+        item.metadata.youtubeMetadata = {
+          title: item.title,
+          author: item.author,
+          duration: item.duration,
+        };
+        item.metadata.catalog = catalog;
+        item.metadata.acquisition = {
+          method: 'commons-youtube',
+          youtubeId: id,
+          versionTitle: catalog.name,
+          evidenceUrl: catalog.evidenceUrl,
+        };
+        // A cópia licenciada pode ser uma versão/excerto, não a íntegra do YouTube.
+        item.title = `${item.title} — versão licenciada: ${catalog.name.replace(/^File:/, '')}`;
+        item.duration = catalog.evidence.duration as number;
+        item.mediaUrl = catalog.mediaUrl;
+        item.accessible = true;
+        item.reason =
+          'Versão licenciada correspondente encontrada no Wikimedia Commons. Importação automática disponível com créditos e licença registrados.';
+      }
+    } catch {
+      item.metadata.originalDiscovery = 'unavailable';
+      // Falha do catálogo não é ausência comprovada de original nem autoriza extração.
     }
     return item;
   }
